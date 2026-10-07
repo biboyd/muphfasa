@@ -29,7 +29,7 @@ void stream(const amrex::MultiFab& f_in,
             // find node to stream from
             int i_old = i - LatticeTag.cx[n];
             int j_old = j - LatticeTag.cy[n];
-#if (AMREX_DIM == 3)
+#if (AMREX_SPACEDIM == 3)
             int k_old = k - LatticeTag.cz[n];
 #endif
 

@@ -1,0 +1,34 @@
+// Equilibrium.H — Interface for the Maxwell-Boltzmann equilibrium distribution.
+// Computes f^eq_q(rho, u) using the standard second-order expansion of the
+// Maxwell-Boltzmann distribution, valid at low Mach number.
+// Per-cell functions are AMREX_GPU_HOST_DEVICE callable.
+
+#ifndef MUPHFASA_EQUILIBRIUM_H
+#define MUPHFASA_EQUILIBRIUM_H
+
+#include <AMReX_GpuQualifiers.H>
+#include <AMReX_MultiFab.H>
+#include <AMReX_REAL.H>
+
+namespace muphfasa {
+
+// ── Cell-local equilibrium kernel ─────────────────────────────────────────
+
+// Returns f^eq_q for a single velocity direction q given rho and u[D].
+// LatticeTag must be one of the LatticeDescriptor specialisations.
+template <typename LatticeTag>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real computeEquilibrium(int              q,
+                                amrex::Real      rho,
+                                const amrex::Real* u) noexcept;
+
+// ── MultiFab-level helpers (host-side) ───────────────────────────────────
+// Fills feq_mf (Q components) over all valid cells using rho_mf and vel_mf.
+template <typename LatticeTag>
+void computeEquilibriumMF(const amrex::MultiFab& rho_mf,
+                           const amrex::MultiFab& vel_mf,
+                           amrex::MultiFab&       feq_mf);
+
+} // namespace muphfasa
+
+#endif // MUPHFASA_EQUILIBRIUM_H
