@@ -22,10 +22,10 @@ struct MRT {};   // multiple-relaxation-time (not yet implemented)
 // tau: BGK relaxation time (tau = nu/cs2 + 0.5 in lattice units)
 // f and feq are arrays of length LatticeTag::Q.
 template <typename LatticeTag>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void collideBGK(amrex::Real*       f,
-                const amrex::Real* feq,
-                amrex::Real        tau) noexcept;
+void BGK::collide(const amrex::Box& box, 
+                amrex::Array4<Real> const& f_arr,
+                amrex::Array4<const Real> const& feq_arr,
+                const amrex::Real omega) noexcept;
 
 // ── MultiFab-level collision (host-side) ─────────────────────────────────
 
@@ -34,7 +34,7 @@ void collideBGK(amrex::Real*       f,
 template <typename LatticeTag, typename CollisionModel>
 void collide(amrex::MultiFab&       f_mf,
              const amrex::MultiFab& feq_mf,
-             amrex::Real            tau);
+             amrex::Real            omega);
 
 } // namespace muphfasa
 
