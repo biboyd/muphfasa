@@ -23,6 +23,7 @@ struct LatticeDescriptor<2, 9>
     static constexpr int D = 2;
     static constexpr int Q = 9;
     static constexpr amrex::Real cs2 = amrex::Real(1.0) / amrex::Real(3.0);
+    static constexpr amrex::Real cs2inv = amrex::Real(3.0);
 
     // cx[q], cy[q]: integer components of the q-th discrete velocity
     AMREX_GPU_HOST_DEVICE
