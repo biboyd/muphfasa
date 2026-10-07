@@ -16,12 +16,10 @@ namespace muphfasa {
 // Returns f^eq for a all velocity directions given rho and u array
 // LatticeTag must be one of the LatticeDescriptor specialisations.
 template <typename LatticeTag>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real computeEquilibrium(const Box& box,
-                               Array4<Real const> const& rho,
-                               Array4<Real const> const& vel,
-                               Array4<Real> const& feq_arr;
-                            );
+void computeEquilibrium(const amrex::Box& box,
+                               amrex::Array4<Real const> const& rho,
+                               amrex::Array4<Real const> const& vel,
+                               amrex::Array4<Real> const& feq_arr);
 
 
 // ── MultiFab-level helpers (host-side) ───────────────────────────────────

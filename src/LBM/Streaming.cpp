@@ -31,11 +31,13 @@ void stream(const amrex::MultiFab& f_in,
             int j_old = j - LatticeTag::cy(n);
 #if (AMREX_SPACEDIM == 3)
             int k_old = k - LatticeTag::cz(n);
+#else
+            int k_old = k;
 #endif
 
             // stream
             fo_arr(i, j, k, n) = fi_arr(i_old, j_old, k_old, n);
-        }
+        });
     }
 }
 
