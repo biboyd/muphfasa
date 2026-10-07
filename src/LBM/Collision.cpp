@@ -25,7 +25,7 @@ void collide(amrex::MultiFab&       f_mf,
              const amrex::MultiFab& feq_mf,
              amrex::Real            omega)
 {
-        #ifdef _OPENMP
+    #ifdef _OPENMP
     #pragma omp parallel
     #endif
     for (MFIter mfi(f_in, TilingIfNotGPU()); mfi.isValid(); ++mfi) {
