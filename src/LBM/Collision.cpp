@@ -33,7 +33,7 @@ void collide(amrex::MultiFab&       f_mf,
 
         Array4<Real> const& f_arr= f_mf[mfi].array();
         Array4<Real const> const& feq_arr = feq_mf[mfi].const_array();
-        ParallelFor(tileBox, LatticeTag.Q, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) {
+        ParallelFor(tileBox, LatticeTag::Q, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) {
 
             // collide
             f_arr(i, j, k, n) = collideBGK(f_arr(i, j, k, n), 

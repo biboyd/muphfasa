@@ -24,13 +24,13 @@ void stream(const amrex::MultiFab& f_in,
 
         Array4<Real> const& fo_arr = f_out[mfi].array();
         Array4<Real const> const& fi_arr = f_in[mfi].const_array();
-        ParallelFor(tileBox, LatticeTag.Q, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) {
+        ParallelFor(tileBox, LatticeTag::Q, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) {
 
             // find node to stream from
-            int i_old = i - LatticeTag.cx[n];
-            int j_old = j - LatticeTag.cy[n];
+            int i_old = i - LatticeTag::cx(n);
+            int j_old = j - LatticeTag::cy(n);
 #if (AMREX_SPACEDIM == 3)
-            int k_old = k - LatticeTag.cz[n];
+            int k_old = k - LatticeTag::cz(n);
 #endif
 
             // stream
