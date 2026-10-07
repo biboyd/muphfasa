@@ -28,7 +28,7 @@ void collide(amrex::MultiFab&       f_mf,
     #ifdef _OPENMP
     #pragma omp parallel
     #endif
-    for (MFIter mfi(f_in, TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+    for (MFIter mfi(f_mf, TilingIfNotGPU()); mfi.isValid(); ++mfi) {
         const auto tileBox = mfi.tilebox();
 
         Array4<Real> const& f_arr= f_mf[mfi].array();
