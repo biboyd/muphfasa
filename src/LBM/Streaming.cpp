@@ -34,7 +34,7 @@ void stream(const amrex::MultiFab& f_in,
 #endif
 
             // stream
-            fo_arr[i, j, k, n] = fi_arr[i_old, j_old, k_old, n];
+            fo_arr(i, j, k, n) = fi_arr(i_old, j_old, k_old, n);
         }
     }
 }

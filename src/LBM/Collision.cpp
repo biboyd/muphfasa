@@ -36,8 +36,8 @@ void collide(amrex::MultiFab&       f_mf,
         ParallelFor(tileBox, LatticeTag.Q, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) {
 
             // collide
-            f_arr[i, j, k, n] = collideBGK(f_arr[i, j, k, n], 
-                                           feq_arr[i, j, k, n], omega);
+            f_arr(i, j, k, n) = collideBGK(f_arr(i, j, k, n), 
+                                           feq_arr(i, j, k, n), omega);
         }
     }
 }
