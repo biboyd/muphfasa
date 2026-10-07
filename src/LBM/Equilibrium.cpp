@@ -66,10 +66,10 @@ void computeEquilibriumMF(const amrex::MultiFab& rho_mf,
 }
 
 // ── Explicit instantiations ───────────────────────────────────────────────
-template amrex::Real computeEquilibrium<D2Q9> (const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real> const&);
-template amrex::Real computeEquilibrium<D3Q15>(const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real> const&);
-template amrex::Real computeEquilibrium<D3Q19>(const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real> const&);
-template amrex::Real computeEquilibrium<D3Q27>(const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real> const&);
+template amrex::Real computeEquilibrium<D2Q9> (const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<const Real> const&, amrex::Array4<Real> const&);
+template amrex::Real computeEquilibrium<D3Q15>(const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<const Real> const&, amrex::Array4<Real> const&);
+template amrex::Real computeEquilibrium<D3Q19>(const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<const Real> const&, amrex::Array4<Real> const&);
+template amrex::Real computeEquilibrium<D3Q27>(const amrex::Box&, amrex::Array4<const Real> const&, amrex::Array4<const Real> const&, amrex::Array4<Real> const&);
 
 template void computeEquilibriumMF<D2Q9> (const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&);
 template void computeEquilibriumMF<D3Q15>(const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&);
