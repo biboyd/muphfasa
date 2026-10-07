@@ -10,27 +10,40 @@
 
 namespace muphfasa {
 
-// ── Cell-local kernel ─────────────────────────────────────────────────────
+// ── compute kernel ─────────────────────────────────────────────────────
 template <typename LatticeTag>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real computeEquilibrium( const int         n,
-                                const amrex::Real rho,
-                                const amrex::Real u_sq,
-                                const amrex::Real u_x,
-                                const amrex::Real u_y,
-#if (AMREX_DIM == 3)
-                                const amrex::Real uz
+AMREX_GPU_DEVICE
+void computeEquilibrium(const amrex::Box& box,
+                               amrex::Array4<Real const> const& rho,
+                               amrex::Array4<Real const> const& vel,
+                               amrex::Array4<Real> const& feq_arr)
+
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k ) {
+
+            // calc u squared
+            amrex::Real u_sq = 0.;
+            for (int idim=0; idim < AMREX_SPACEDIM; ++idim){
+                u_sq += vel(i, j, k, idim)*vel(i, j, k, idim);
+            }
+
+            
+            // calc equilib for each comp
+            for (int n=0; n < LatticeTag::Q; ++n){
+
+                amrex::Real cdotu = LatticeTag::cx(n) * vel(i, j, k, 0)
+                                  + LatticeTag::cy(n) * vel(i, j, k, 1)
+#if (AMREX_SPACEDIM == 3)
+                                  + LatticeTag.cz(n) * vel(i, j, k, 2)
 #endif
-                            ) noexcept
-{
-    amrex::Real cdotu = LatticeTag.cx(n) * u_x + LatticeTag.cy(n) * u_y
-#if (AMREX_DIM == 3)
-                        + LatticeTag.cz(n) * u_z
-#endif
-                        ;
-    return LatticeTag.weights(n) * rho * (1 + LatticeTag.cs2inv * cdotu 
-                                                         + 0.5*LatticeTag.cs2inv*LatticeTag.cs2inv * cdotu*cdotu 
-                                                         + 0.5 * LatticeTag.cs2inv * u_sq);
+                ;
+
+                feq_arr(i, j, k, n) = LatticeTag::weights(n) * rho(i, j, k) * 
+                                      (1 + LatticeTag.cs2inv * cdotu 
+                                         + 0.5 * LatticeTag.cs2inv * LatticeTag.cs2inv * cdotu*cdotu 
+                                         - 0.5 * LatticeTag.cs2inv * u_sq);
+            }
+                                  
+        })
 }
 
 // ── MultiFab-level helper ─────────────────────────────────────────────────
@@ -45,43 +58,19 @@ void computeEquilibriumMF(const amrex::MultiFab& rho_mf,
     for (MFIter mfi(feq_mf, TilingIfNotGPU()); mfi.isValid(); ++mfi) {
         const auto tileBox = mfi.tilebox();
 
-        Array4<Real> const& feq_arr = feq_mf[mfi].array();
-        Array4<Real const> const& rho = rho_mf[mfi].const_array();
-        Array4<Real const> const& vel = vel_mf[mfi].const_array();
-        ParallelFor(tileBox, [=] AMREX_GPU_DEVICE(int i, int j, int k ) {
+        amrex::Array4<Real> const& feq_arr = feq_mf[mfi].array();
+        amrex::Array4<Real const> const& rho = rho_mf[mfi].const_array();
+        amrex::Array4<Real const> const& vel = vel_mf[mfi].const_array();
+        computeEquilibrium(tileBox, rho, vel, feq_arr);
 
-            // calc u squared
-            amrex::Real u_sqr = 0.;
-            for (int idim=0; idim < AMREX_DIM; ++idim){
-                u_sqr += vel(i, j, k, l)*vel(i, j, k, idim);
-            }
-
-            
-            // calc equilib for each comp
-            for (int n=0; n < LatticeTag.Q; ++n){
-
-                amrex::Real cdotu = LatticeTag.cx(n) * u_x 
-                                  + LatticeTag.cy(n) * u_y
-#if (AMREX_DIM == 3)
-                                  + LatticeTag.cz(n) * u_z
-#endif
-                ;
-
-                feq_arr(i, j, k, n) = LatticeTag.weights(n) * rho(i, j, k) * 
-                                      (1 + LatticeTag.cs2inv * cdotu 
-                                         + 0.5 * LatticeTag.cs2inv * LatticeTag.cs2inv * cdotu*cdotu 
-                                         + 0.5 * LatticeTag.cs2inv * u_sq);
-            }
-                                  
-        }
     }
 }
 
 // ── Explicit instantiations ───────────────────────────────────────────────
-template amrex::Real computeEquilibrium<D2Q9> (int, amrex::Real, const amrex::Real*) noexcept;
-template amrex::Real computeEquilibrium<D3Q15>(int, amrex::Real, const amrex::Real*) noexcept;
-template amrex::Real computeEquilibrium<D3Q19>(int, amrex::Real, const amrex::Real*) noexcept;
-template amrex::Real computeEquilibrium<D3Q27>(int, amrex::Real, const amrex::Real*) noexcept;
+template amrex::Real computeEquilibrium<D2Q9> (amrex::Box&, amrex::Array4<Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real const> const&) noexcept;
+template amrex::Real computeEquilibrium<D3Q15>(amrex::Box&, amrex::Array4<Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real const> const&) noexcept;
+template amrex::Real computeEquilibrium<D3Q19>(amrex::Box&, amrex::Array4<Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real const> const&) noexcept;
+template amrex::Real computeEquilibrium<D3Q27>(amrex::Box&, amrex::Array4<Real> const&, amrex::Array4<Real const> const&, amrex::Array4<Real const> const&) noexcept;
 
 template void computeEquilibriumMF<D2Q9> (const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&);
 template void computeEquilibriumMF<D3Q15>(const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&);

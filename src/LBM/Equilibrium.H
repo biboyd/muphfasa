@@ -12,15 +12,17 @@
 
 namespace muphfasa {
 
-// ── Cell-local equilibrium kernel ─────────────────────────────────────────
-
-// Returns f^eq_q for a single velocity direction q given rho and u[D].
+// ── compute kernel ─────────────────────────────────────────────────────
+// Returns f^eq for a all velocity directions given rho and u array
 // LatticeTag must be one of the LatticeDescriptor specialisations.
 template <typename LatticeTag>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real computeEquilibrium(int              q,
-                                amrex::Real      rho,
-                                const amrex::Real* u) noexcept;
+amrex::Real computeEquilibrium(const Box& box,
+                               Array4<Real const> const& rho,
+                               Array4<Real const> const& vel,
+                               Array4<Real> const& feq_arr;
+                            );
+
 
 // ── MultiFab-level helpers (host-side) ───────────────────────────────────
 // Fills feq_mf (Q components) over all valid cells using rho_mf and vel_mf.
