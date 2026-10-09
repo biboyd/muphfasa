@@ -17,7 +17,7 @@ void computeEquilibrium(const amrex::Box& box,
                                amrex::Array4<Real const> const& vel,
                                amrex::Array4<Real> const& feq_arr) {
 
-        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k ) {
+        ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) {
 
             // calc u squared
             amrex::Real u_sq = 0.;
@@ -25,23 +25,17 @@ void computeEquilibrium(const amrex::Box& box,
                 u_sq += vel(i, j, k, idim)*vel(i, j, k, idim);
             }
 
-            
-            // calc equilib for each comp
-            for (int n=0; n < LatticeTag::Q; ++n){
-
-                amrex::Real cdotu = LatticeTag::cx(n) * vel(i, j, k, 0)
-                                  + LatticeTag::cy(n) * vel(i, j, k, 1)
+            amrex::Real cdotu = LatticeTag::cx(n) * vel(i, j, k, 0)
+                                + LatticeTag::cy(n) * vel(i, j, k, 1)
 #if (AMREX_SPACEDIM == 3)
-                                  + LatticeTag::cz(n) * vel(i, j, k, 2)
+                                + LatticeTag::cz(n) * vel(i, j, k, 2)
 #endif
-                ;
+            ;
 
-                feq_arr(i, j, k, n) = LatticeTag::weights(n) * rho(i, j, k) * 
-                                      (1 + LatticeTag::cs2inv * cdotu 
-                                         + 0.5 * LatticeTag::cs2inv * LatticeTag::cs2inv * cdotu*cdotu 
-                                         - 0.5 * LatticeTag::cs2inv * u_sq);
-            }
-                                  
+            feq_arr(i, j, k, n) = LatticeTag::weights(n) * rho(i, j, k) * 
+                                    (1 + LatticeTag::cs2inv * cdotu 
+                                        + 0.5 * LatticeTag::cs2inv * LatticeTag::cs2inv * cdotu*cdotu 
+                                        - 0.5 * LatticeTag::cs2inv * u_sq);
         });
 }
 
@@ -61,8 +55,6 @@ void computeEquilibriumMF(const amrex::MultiFab& rho_mf,
         amrex::Array4<Real const> const& rho = rho_mf[mfi].const_array();
         amrex::Array4<Real const> const& vel = vel_mf[mfi].const_array();
         computeEquilibrium(tileBox, rho, vel, feq_arr);
-
-    }
 }
 
 // ── Explicit instantiations ───────────────────────────────────────────────
