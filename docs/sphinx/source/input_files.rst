@@ -137,9 +137,14 @@ no-slip plates (plane-Couette/Poiseuille-like setup).
        balancing (``GeometryHandler::buildBoxArray``).
    * - ``grid.n_ghost``
      - int
-     - ``1``
-     - Number of ghost-cell layers on the distribution-function MultiFab.
-       One layer is sufficient for a single-relaxation-time (BGK) stencil.
+     - *(unused)*
+     - **Not read anywhere in the code** — ``InputParser::nGhost()`` parses
+       it via ``ParmParse``, but no caller ever invokes that accessor. The
+       actual ghost-cell count on the distribution-function MultiFab is the
+       compile-time constant ``LatticeTag::nGhost`` (one layer, sufficient
+       for BGK), set in ``src/Simulation/SimulationSetup.cpp``'s
+       ``m_f.define(...)`` call. Setting ``grid.n_ghost`` in an input file
+       has no effect.
 
 ``sim.*``
 ---------
@@ -159,9 +164,13 @@ no-slip plates (plane-Couette/Poiseuille-like setup).
        the key must be present.
    * - ``sim.stop_time``
      - real
-     - ``-1.0``
-     - Physical end time. A negative value (the default) means "ignore this
-       and run to ``max_step``".
+     - *(unused)*
+     - **Not read anywhere in the code.** ``InputParser::stopTime()`` parses
+       it via ``ParmParse``, but no caller ever invokes that accessor —
+       ``main.cpp``'s time loop (``for (int step = 0; step <= max_step;
+       ++step)``) only consults ``sim.max_step``. Setting ``sim.stop_time``
+       in an input file has no effect; there is currently no way to stop a
+       run early by physical time.
 
 ``lbm.*``
 ---------

@@ -173,9 +173,26 @@ run from a checkout where ``external/amrex`` has already been initialized.
 The resulting executable base name is ``muphfasa`` (AMReX's GNUMake system
 appends a suffix encoding ``DIM``/``COMP``/``DEBUG``/etc.).
 
-A GNUmakefile also exists under ``tests/`` (``EBASE = muphfasa_unit_tests``)
-for building the unit tests the same way; it can be invoked with
-``make -C tests``.
+.. warning::
+
+   A ``tests/GNUmakefile`` also exists, intended to build the unit tests the
+   same way (``make -C tests``), but it is currently **broken** and does not
+   produce a working build:
+
+   - It never includes AMReX's own ``Src/Base`` (etc.) ``Make.package``
+     files the way the top-level ``GNUmakefile`` does (via its ``Pdirs``/
+     ``Ppack`` lines), so compiling any translation unit that includes an
+     AMReX header fails immediately with e.g. ``fatal error: AMReX.H: No
+     such file or directory``.
+   - Even if that were fixed, it lists all four ``test_*.cpp`` files as
+     ``CEXE_sources`` for a single ``EBASE = muphfasa_unit_tests``
+     executable — but each ``test_*.cpp`` defines its own ``int main()``,
+     so linking them together would fail with "multiple definition of
+     ``main``".
+
+   Until this is fixed, build the unit tests via the CMake path instead
+   (``-Dmuphfasa_BUILD_TESTS=ON``, see above), which builds each test as its
+   own executable correctly.
 
 Running a simulation
 ---------------------
@@ -183,7 +200,21 @@ Running a simulation
 Once built, run the executable with a single positional argument: the path
 to an input file::
 
-    ./muphfasa <inputs-file>
+    ./<executable> <inputs-file>
+
+.. warning::
+
+   ``<executable>`` is **not** literally ``./muphfasa``. The exact name
+   depends on which build system you used:
+
+   - **CMake build**: the executable is named ``muphfasa`` exactly, inside
+     your chosen build directory (e.g. ``./build/muphfasa``).
+   - **GNUmakefile build**: AMReX's GNUMake system appends a suffix encoding
+     the dimensionality/compiler/flags to ``EBASE = muphfasa``. A
+     ``make DIM=2 USE_MPI=FALSE`` build, for instance, produces
+     ``muphfasa2d.gnu.ex`` in the repository root — *not* ``muphfasa``. Run
+     ``ls *.ex`` after building to see the exact name; it changes with
+     ``DIM``, ``DEBUG``, ``USE_MPI``, and ``USE_OMP``.
 
 Input files are plain-text ``ParmParse``-style key/value files (parsed by
 AMReX). Two worked examples ship under ``example_inputs/``:
@@ -195,8 +226,8 @@ AMReX). Two worked examples ship under ``example_inputs/``:
 
 Run them, for example, as::
 
-    ./muphfasa example_inputs/inputs.2d     # requires a 2-D build (DIM=2)
-    ./muphfasa example_inputs/inputs.3d     # requires a 3-D build (DIM=3)
+    ./build/muphfasa example_inputs/inputs.2d       # CMake build, requires DIM=2
+    ./muphfasa2d.gnu.ex example_inputs/inputs.2d    # GNUmakefile build, DIM=2 USE_MPI=FALSE
 
 See :doc:`input_files` for the full parameter reference.
 
