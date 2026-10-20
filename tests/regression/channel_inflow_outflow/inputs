@@ -1,0 +1,46 @@
+# Regression test: uniform channel flow (2-D), Inflow at x=lo, Outflow at
+# x=hi, periodic in y. No walls, no pressure gradient.
+#
+# Steady state: the flow must become spatially uniform (nothing in the
+# domain can create a gradient), at a value close to but not exactly
+# (U0, units.ref_density) -- see tests/regression/channel_inflow_outflow/
+# test_channel.cpp for why. max_step is large enough for the transient from
+# the quiescent IC to fully relax (empirically ~1500 steps on this grid).
+
+# ── Grid ──────────────────────────────────────────────────────────────────
+grid.ncells      = 32 4     # Nx Ny (Inflow/Outflow along x, periodic in y)
+grid.max_grid_size = 32
+grid.n_ghost     = 1
+
+# ── Simulation ─────────────────────────────────────────────────────────────
+sim.max_step     = 2000
+sim.stop_time    = -1.0      # run to max_step
+
+# ── LBM ────────────────────────────────────────────────────────────────────
+lbm.lattice_type = D2Q9
+
+# ── Physical units ─────────────────────────────────────────────────────────
+units.ref_length    = 1.0
+units.ref_velocity  = 1.0 # match inflow velocity
+units.Re            = 32.0
+units.ref_density   = 1.0
+
+# ── Boundary conditions ────────────────────────────────────────────────────
+# x: Inflow at lo, Outflow at hi
+# y: periodic
+bc.lo_type = Inflow    Periodic
+bc.hi_type = Outflow   Periodic
+bc.lox_Uin = 1.0  0.0   # (vx, vy) in physical units
+
+# ── Geometry ───────────────────────────────────────────────────────────────
+# is_periodic is derived from bc.lo_type/bc.hi_type (GeometryHandler), not
+# read from a separate key -- these prob_lo/prob_hi values are only used to
+# set the physical domain extents for plotfile output.
+geometry.prob_lo    = 0.0  0.0
+geometry.prob_hi    = 1.0  0.125
+
+# ── Output ─────────────────────────────────────────────────────────────────
+amr.plot_int        = 50
+amr.chk_int         = 100
+amr.plot_file       = plt
+amr.check_file      = chk
