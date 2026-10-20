@@ -16,14 +16,12 @@ lbm.lattice_type  = D2Q9
 
 # ── Physical units ─────────────────────────────────────────────────────────
 # tau (relaxation time) is derived from these via UnitConverter, not set
-# directly -- see SimulationImpl's constructor. ref_viscosity=0.01 gives the
-# Ghia et al. Re=100 this test benchmarks against; with N_ref =
-# max(grid.ncells) = 64 and the default lattice velocity U_lat=0.1, that
-# works out to tau=0.692.
+# directly -- see SimulationImpl's constructor. Re=100 is the Ghia et al.
+# case this test benchmarks against; with N_ref = max(grid.ncells) = 64 and
+# the default lattice velocity U_lat=0.1, that works out to tau=0.692.
 units.ref_length    = 1.0
 units.ref_velocity  = 1.0
-units.ref_viscosity = 0.01   # = 1/Re; gives Re=100
-units.Re            = 100.0  # = ref_velocity*ref_length/ref_viscosity
+units.Re            = 100.0
 units.Ma            = 0.05
 
 # ── Boundary conditions ────────────────────────────────────────────────────
@@ -35,7 +33,6 @@ bc.hiy_Uwall = 0.05  0.0   # (vx, vy) in lattice units
 # ── Geometry ───────────────────────────────────────────────────────────────
 geometry.prob_lo    = 0.0  0.0
 geometry.prob_hi    = 1.0  1.0
-geometry.is_periodic = 0   0
 
 # ── Output ─────────────────────────────────────────────────────────────────
 amr.plot_int        = 5000

@@ -18,13 +18,11 @@ units.Re            = 100.0
 units.Ma            = 0.05
 units.ref_length    = 1.0
 units.ref_velocity  = 1.0
-units.ref_viscosity = 0.01
 units.ref_density   = 1.0
 
 # ── Geometry ───────────────────────────────────────────────────────────────
 geometry.prob_lo    = 0.0  0.0  0.0
 geometry.prob_hi    = 2.0  1.0  1.0
-geometry.is_periodic = 1   0    1    # periodic in x and z, walls in y
 geometry.type       = box
 geometry.use_eb     = 0
 

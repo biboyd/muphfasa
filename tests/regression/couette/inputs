@@ -39,7 +39,7 @@ lbm.lattice_type = D2Q9
 # tau is derived (SimulationImpl ctor) from these via UnitConverter, with
 # N_ref = max(grid.ncells) = 32 and the default lattice velocity U_lat=0.1:
 #   dx = ref_length/N_ref,  dt = U_lat*dx/ref_velocity
-#   nu_lat = ref_viscosity*dt/dx^2 = 0.1 [lattice units]
+#   nu_ref = ref_velocity*ref_length/Re,  nu_lat = nu_ref*dt/dx^2 = 0.1 [lattice units]
 #   tau = nu_lat/cs2 + 0.5 = 0.8
 units.ref_length    = 1.0
 units.ref_velocity  = 1.0 # match wall velocity

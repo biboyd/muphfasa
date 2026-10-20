@@ -49,13 +49,11 @@ two no-slip plates.
     units.Ma           = 0.05        # Mach number (keep < 0.1 for accuracy)
     units.ref_length   = 1.0         # [m]
     units.ref_velocity = 1.0         # [m/s]
-    units.ref_viscosity = 0.01       # [m^2/s]
     units.ref_density  = 1.0         # [kg/m^3]
 
     # ── Geometry ───────────────────────────────────────────────────────────────
     geometry.prob_lo    = 0.0  0.0
     geometry.prob_hi    = 2.0  1.0
-    geometry.is_periodic = 1   0     # periodic in x, walls in y
     geometry.type       = box         # "box" | "sphere" | "stl"
     geometry.use_eb     = 0
 
@@ -98,13 +96,11 @@ no-slip plates (plane-Couette/Poiseuille-like setup).
     units.Ma            = 0.05
     units.ref_length    = 1.0
     units.ref_velocity  = 1.0
-    units.ref_viscosity = 0.01
     units.ref_density   = 1.0
 
     # ── Geometry ───────────────────────────────────────────────────────────────
     geometry.prob_lo    = 0.0  0.0  0.0
     geometry.prob_hi    = 2.0  1.0  1.0
-    geometry.is_periodic = 1   0    1    # periodic in x and z, walls in y
     geometry.type       = box
     geometry.use_eb     = 0
 
@@ -279,27 +275,16 @@ no-slip plates (plane-Couette/Poiseuille-like setup).
    input file has no effect on the run; it is accepted silently and
    ignored.
 
-.. warning::
+The reference kinematic viscosity used by the solver is *derived*, not
+read from an input key, inside ``UnitConverter``'s constructor
+(``src/LBM/Units.cpp``):
 
-   **``units.ref_viscosity`` (set in both example input files) is not read
-   anywhere in the code.** ``InputParser`` has no ``refViscosity()``
-   accessor, and no ``ParmParse`` query for ``units.ref_viscosity`` exists
-   in ``InputParser.cpp``. The reference kinematic viscosity actually used
-   by the solver is *derived*, not read, inside ``UnitConverter``'s
-   constructor (``src/LBM/Units.cpp``):
+.. code-block:: cpp
 
-   .. code-block:: cpp
+    m_nu_ref = m_U_ref * m_L_ref / m_Re;   // nu_ref = U_ref * L_ref / Re
 
-       m_nu_ref = m_U_ref * m_L_ref / m_Re;   // nu_ref = U_ref * L_ref / Re
-
-   So the ``units.ref_viscosity = 0.01`` lines in
-   ``example_inputs/inputs.2d`` and ``inputs.3d`` are vestigial: ``ParmParse``
-   silently ignores the unrecognized key, and the effective viscosity is
-   whatever ``Re``, ``ref_velocity``, and ``ref_length`` imply (in both
-   examples: :math:`\nu_{ref} = 1.0 \times 1.0 / 100.0 = 0.01`, which
-   happens to match the stated value in these particular examples — but
-   changing ``units.ref_viscosity`` alone in an input file would silently do
-   nothing).
+so the effective viscosity is whatever ``Re``, ``ref_velocity``, and
+``ref_length`` imply; there is no separate ``units.ref_viscosity`` key.
 
 Stability bounds enforced by ``UnitConverter`` (``src/LBM/Units.cpp``)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -352,34 +337,27 @@ After resolving ``tau``/``u_lat`` (see ``lbm.*`` above), the constructor:
      - If nonzero, calls ``GeometryHandler::initEB()``. See the TODO note
        above — EB geometry construction is not yet implemented.
 
-.. warning::
+Periodicity is not set via a ``geometry.*`` key; it is derived
+per-direction in ``GeometryHandler::GeometryHandler()``
+(``src/Geometry/GeometryHandler.cpp``) from whether ``bc.lo_type`` reads
+``"Periodic"`` for that direction:
 
-   **``geometry.is_periodic`` (set in both example input files) is not read
-   anywhere in the code.** ``InputParser`` has no accessor that queries
-   ``geometry.is_periodic`` at all. Periodicity is actually derived
-   per-direction in ``GeometryHandler::GeometryHandler()``
-   (``src/Geometry/GeometryHandler.cpp``) from whether ``bc.lo_type`` reads
-   ``"Periodic"`` for that direction:
+.. code-block:: cpp
 
-   .. code-block:: cpp
+    auto const bc_names = params.bcNames();
+    for (int dim = 0; dim < AMREX_SPACEDIM; ++dim) {
+        is_periodic[dim] = (bc_names[2 * dim] == "Periodic") ? 1 : 0;
+    }
 
-       auto const bc_names = params.bcNames();
-       for (int dim = 0; dim < AMREX_SPACEDIM; ++dim) {
-           is_periodic[dim] = (bc_names[2 * dim] == "Periodic") ? 1 : 0;
-       }
-
-   So the ``geometry.is_periodic = 1 0`` / ``1 0 1`` lines in the example
-   inputs are vestigial — periodicity is controlled entirely by ``bc.lo_type``
-   / ``bc.hi_type`` (see ``bc.*`` below), and ``geometry.is_periodic`` is
-   silently ignored by ``ParmParse``. Note also that
-   ``SimulationSetup::buildBCManager()`` asserts that any face named
-   ``"Periodic"`` in ``bc.*`` corresponds to a direction that
-   ``amrex::Geometry`` actually considers periodic, and aborts otherwise
-   with ``buildBCManager: bc input requests "Periodic" on a face whose
-   Geometry is not periodic in that direction`` — so ``bc.lo_type``/``hi_type``
-   must agree per-direction (only the lo-face name is consulted to set
-   periodicity, so the hi-face name for a periodic direction is not
-   independently checked against geometry, only against this assertion).
+So periodicity is controlled entirely by ``bc.lo_type`` / ``bc.hi_type``
+(see ``bc.*`` below). Note also that ``SimulationSetup::buildBCManager()``
+asserts that any face named ``"Periodic"`` in ``bc.*`` corresponds to a
+direction that ``amrex::Geometry`` actually considers periodic, and aborts
+otherwise with ``buildBCManager: bc input requests "Periodic" on a face
+whose Geometry is not periodic in that direction`` — so ``bc.lo_type``/
+``hi_type`` must agree per-direction (only the lo-face name is consulted to
+set periodicity, so the hi-face name for a periodic direction is not
+independently checked against geometry, only against this assertion).
 
 ``bc.*``
 --------
@@ -418,7 +396,7 @@ which ``buildBCManager()`` intercepts before ever calling
 - ``Periodic`` — handled by AMReX's own ``FillBoundary``/periodicity
   machinery, not by a custom kernel. Requires the corresponding
   ``amrex::Geometry`` direction to actually be periodic (see the
-  ``geometry.is_periodic`` warning above) or the run aborts.
+  periodicity-derivation note under ``geometry.*`` above) or the run aborts.
 - ``NoSlip`` — stationary solid wall (bounce-back-style kernel). Takes no
   velocity/density parameters.
 - ``MovingWall`` — solid wall translating tangentially at a prescribed
