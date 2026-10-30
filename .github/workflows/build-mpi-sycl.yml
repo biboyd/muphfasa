@@ -9,9 +9,6 @@ name: Build check (MPI+SYCL)
 #
 # MPI is MPICH (libmpich-dev/mpich), not OpenMPI, to match Aurora at ALCF,
 # which ships Cray MPICH: AMReX's GNUMake auto-detects the wrapper
-# (mpicxx -showme for OpenMPI, mpicxx -link_info/-compile_info for MPICH) and
-# exports MPICH_CXX=icpx for SYCL builds. No GPU is needed on the runner:
-# SYCL compilation targets SPIR-V/host on plain CPUs.
 
 on:
   push:
@@ -71,6 +68,12 @@ jobs:
         # runtime), which is out of scope for this check. USE_SYCL=TRUE
         # forces COMP=sycl (icpx); AMReX's GNUMake disables ccache for SYCL
         # builds, so none is used here either.
+        #
+        # USE_MPI=TRUE switches the compiler to the mpicxx wrapper
+        # (sites/Make.unknown). Stock MPICH's wrapper would call g++, which
+        # rejects the icpx/SYCL flags, so point it at icpx via MPICH_CXX --
+        # the same env var AMReX itself exports for HIP/CUDA (Make.defs).
         run: |
           source /opt/intel/oneapi/setvars.sh
+          export MPICH_CXX=icpx MPICH_CC=icx
           make -j"$(nproc)" DIM=${{ matrix.dim }} USE_MPI=TRUE USE_SYCL=TRUE
