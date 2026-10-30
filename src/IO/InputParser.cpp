@@ -323,4 +323,64 @@ std::string InputParser::checkpointPrefix() const
     return val;
 }
 
+int InputParser::maxLevel() const
+{
+    amrex::ParmParse pp("amr");
+    int val = 0;
+    pp.query("max_level", val);
+    return val;
+}
+
+int InputParser::blockingFactor() const
+{
+    amrex::ParmParse pp("amr");
+    int val = 4;
+    pp.query("blocking_factor", val);
+    return val;
+}
+
+int InputParser::nErrorBuf() const
+{
+    amrex::ParmParse pp("amr");
+    int val = 2;
+    pp.query("n_error_buf", val);
+    return val;
+}
+
+amrex::Real InputParser::gridEff() const
+{
+    amrex::ParmParse pp("amr");
+    amrex::Real val = 0.7;
+    pp.query("grid_eff", val);
+    return val;
+}
+
+int InputParser::regridInterval() const
+{
+    amrex::ParmParse pp("amr");
+    int val = 0;
+    pp.query("regrid_int", val);
+    return val;
+}
+
+bool InputParser::tagBox(int lev, std::vector<amrex::Real>& lo,
+                         std::vector<amrex::Real>& hi) const
+{
+    amrex::ParmParse pp("tagging");
+    const std::string slo = "box_lo_" + std::to_string(lev);
+    const std::string shi = "box_hi_" + std::to_string(lev);
+    if (!pp.contains(slo.c_str()) || !pp.contains(shi.c_str())) { return false; }
+    pp.getarr(slo.c_str(), lo, 0, AMREX_SPACEDIM);
+    pp.getarr(shi.c_str(), hi, 0, AMREX_SPACEDIM);
+    return true;
+}
+
+amrex::Real InputParser::vorticityThreshold() const
+{
+    amrex::ParmParse pp("tagging");
+    amrex::Real val = 0.0;
+    pp.query("vort_thresh", val);
+    return val;
+}
+
 } // namespace muphfasa

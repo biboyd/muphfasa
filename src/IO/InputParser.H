@@ -91,6 +91,24 @@ public:
     int         checkpointInterval() const;
     std::string plotfilePrefix()     const;
     std::string checkpointPrefix()   const;
+
+    // ── Adaptive mesh refinement ─────────────────────────────────────────
+    // amr.max_level = 0 (default) runs the original single-level solver.
+    // See amr_implementation.md for the multi-level scheme.
+    int         maxLevel()        const;  // amr.max_level
+    int         blockingFactor()  const;  // amr.blocking_factor (default 4)
+    int         nErrorBuf()       const;  // amr.n_error_buf (default 2)
+    amrex::Real gridEff()         const;  // amr.grid_eff (default 0.7)
+    int         regridInterval()  const;  // amr.regrid_int (default 0 = static)
+
+    // Static refinement box for tagging level lev (cells of level lev whose
+    // centres lie inside [box_lo, box_hi], physical units, are refined):
+    // tagging.box_lo_<lev>, tagging.box_hi_<lev>. Returns false if absent.
+    bool tagBox(int lev, std::vector<amrex::Real>& lo,
+                std::vector<amrex::Real>& hi) const;
+    // tagging.vort_thresh: tag cells with |vorticity| (lattice units of
+    // level 0) above this value; <= 0 (default) disables.
+    amrex::Real vorticityThreshold() const;
 };
 
 } // namespace muphfasa

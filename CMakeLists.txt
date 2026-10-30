@@ -60,6 +60,7 @@ set(MUPHFASA_SOURCES
     src/LBM/Equilibrium.cpp
     src/LBM/Streaming.cpp
     src/LBM/Collision.cpp
+    src/LBM/AmrInterface.cpp
     src/LBM/BoundaryConditions.cpp
     src/LBM/Units.cpp
     src/Geometry/GeometryHandler.cpp
@@ -68,6 +69,8 @@ set(MUPHFASA_SOURCES
     src/IO/Plotfile.cpp
     src/Simulation/SimulationSetup.cpp
     src/Simulation/SimulationFactory.cpp
+    src/Simulation/BCSetup.cpp
+    src/Simulation/AmrSimulation.cpp
     src/Simulation/InitData.cpp
 )
 

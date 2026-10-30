@@ -15,6 +15,7 @@ set(SOLVER_SOURCES_NO_MAIN
     ${CMAKE_SOURCE_DIR}/src/LBM/Equilibrium.cpp
     ${CMAKE_SOURCE_DIR}/src/LBM/Streaming.cpp
     ${CMAKE_SOURCE_DIR}/src/LBM/Collision.cpp
+    ${CMAKE_SOURCE_DIR}/src/LBM/AmrInterface.cpp
     ${CMAKE_SOURCE_DIR}/src/LBM/BoundaryConditions.cpp
     ${CMAKE_SOURCE_DIR}/src/LBM/Units.cpp
     ${CMAKE_SOURCE_DIR}/src/Geometry/GeometryHandler.cpp
@@ -23,6 +24,8 @@ set(SOLVER_SOURCES_NO_MAIN
     ${CMAKE_SOURCE_DIR}/src/IO/Plotfile.cpp
     ${CMAKE_SOURCE_DIR}/src/Simulation/SimulationSetup.cpp
     ${CMAKE_SOURCE_DIR}/src/Simulation/SimulationFactory.cpp
+    ${CMAKE_SOURCE_DIR}/src/Simulation/BCSetup.cpp
+    ${CMAKE_SOURCE_DIR}/src/Simulation/AmrSimulation.cpp
 )
 
 # Default initial-condition routine (quiescent start); see

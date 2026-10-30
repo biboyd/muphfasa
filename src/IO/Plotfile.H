@@ -39,6 +39,15 @@ void writeMacroPlotfile(const std::string&     file_name,
                         amrex::Real            time,
                         int                    step);
 
+// Multi-level version of writeMacroPlotfile (one entry per AMR level).
+void writeMacroPlotfileMultiLevel(const std::string&                     file_name,
+                                  const amrex::Vector<amrex::MultiFab>&  rho_mf,
+                                  const amrex::Vector<amrex::MultiFab>&  vel_mf,
+                                  const amrex::Vector<amrex::Geometry>&  geom,
+                                  const amrex::Vector<amrex::IntVect>&   ref_ratio,
+                                  amrex::Real                            time,
+                                  int                                    step);
+
 // Build a plotfile directory name from a prefix and step index.
 // e.g. plotfileName("plt", 100) -> "plt00100"
 std::string plotfileName(const std::string& prefix, int step);

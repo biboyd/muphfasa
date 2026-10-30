@@ -38,6 +38,16 @@ public:
     virtual amrex::Real omega() const noexcept = 0;
     virtual const UnitConverter& units() const noexcept = 0;
     virtual const amrex::Geometry& geom() const noexcept = 0;
+
+    // ── Multi-level accessors ─────────────────────────────────────────────
+    // Single-level simulations have finestLevel() == 0, and the per-level
+    // accessors return the level-0 data. The un-suffixed accessors above
+    // always refer to level 0.
+    virtual int finestLevel() const noexcept { return 0; }
+    virtual const amrex::MultiFab& f(int /*lev*/)   const noexcept { return f(); }
+    virtual const amrex::MultiFab& rho(int /*lev*/) const noexcept { return rho(); }
+    virtual const amrex::MultiFab& vel(int /*lev*/) const noexcept { return vel(); }
+    virtual const amrex::Geometry& geom(int /*lev*/) const noexcept { return geom(); }
 };
 
 } // namespace muphfasa

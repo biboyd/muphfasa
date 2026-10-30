@@ -67,6 +67,43 @@ void writeMacroPlotfile(const std::string&     file_name,
     writePlotfile(file_name, mfs, names, geom, time, step);
 }
 
+void writeMacroPlotfileMultiLevel(const std::string&                     file_name,
+                                  const amrex::Vector<amrex::MultiFab>&  rho_mf,
+                                  const amrex::Vector<amrex::MultiFab>&  vel_mf,
+                                  const amrex::Vector<amrex::Geometry>&  geom,
+                                  const amrex::Vector<amrex::IntVect>&   ref_ratio,
+                                  amrex::Real                            time,
+                                  int                                    step)
+{
+    BL_PROFILE("writeMacroPlotfileMultiLevel()");
+
+    amrex::Vector<std::string> names = {"density"};
+#if   (AMREX_SPACEDIM == 2)
+    names.push_back("vx"); names.push_back("vy");
+#elif (AMREX_SPACEDIM == 3)
+    names.push_back("vx"); names.push_back("vy"); names.push_back("vz");
+#endif
+
+    const int nlevels = static_cast<int>(rho_mf.size());
+    const int ncomp   = 1 + AMREX_SPACEDIM;
+    amrex::Vector<amrex::MultiFab> plot_mf(nlevels);
+    amrex::Vector<const amrex::MultiFab*> plot_ptr(nlevels);
+    amrex::Vector<int> steps(nlevels);
+    for (int lev = 0; lev < nlevels; ++lev) {
+        plot_mf[lev].define(rho_mf[lev].boxArray(), rho_mf[lev].DistributionMap(), ncomp, 0);
+        amrex::MultiFab::Copy(plot_mf[lev], rho_mf[lev], 0, 0, 1, 0);
+        amrex::MultiFab::Copy(plot_mf[lev], vel_mf[lev], 0, 1, AMREX_SPACEDIM, 0);
+        plot_ptr[lev] = &plot_mf[lev];
+        steps[lev] = step * (1 << lev);
+    }
+
+    amrex::WriteMultiLevelPlotfile(file_name, nlevels, plot_ptr, names, geom, time,
+                                   steps, ref_ratio);
+
+    amrex::Print() << "Plotfile: wrote " << file_name << "  levels=" << nlevels
+                   << "  step=" << step << "  time=" << time << "\n";
+}
+
 std::string plotfileName(const std::string& prefix, int step)
 {
     std::ostringstream ss;

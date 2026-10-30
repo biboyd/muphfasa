@@ -4,6 +4,7 @@
 
 #include "ISimulation.H"
 #include "SimulationSetup.H"
+#include "AmrSimulation.H"
 #include "IO/InputParser.H"
 #include "LBM/Collision.H"
 #include "LBM/LatticeDescriptor.H"
@@ -22,6 +23,11 @@ static std::unique_ptr<ISimulation> makeSimulationForLattice(const InputParser& 
     const std::string collision = params.collisionModel();
 
     if (collision == "BGK") {
+        // amr.max_level > 0 selects the multi-level solver; the default
+        // (0) keeps the original single-level solver.
+        if (params.maxLevel() > 0) {
+            return std::make_unique<AmrSimulationImpl<LatticeTag, BGK>>(params);
+        }
         return std::make_unique<SimulationImpl<LatticeTag, BGK>>(params);
     }
     if (collision == "TRT" || collision == "MRT") {
