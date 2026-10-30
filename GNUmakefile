@@ -8,6 +8,7 @@
 #   make DIM=2 USE_OMP=TRUE          OpenMP-threaded build
 #   make DIM=2 USE_CUDA=TRUE         NVIDIA GPU build
 #   make DIM=2 USE_HIP=TRUE          AMD GPU build
+#   make DIM=2 USE_SYCL=TRUE         SYCL GPU build (forces COMP=sycl, DPC++/icpx)
 #
 # All the shared build logic (AMReX modules, solver sources, Make.rules)
 # lives in Make.muphfasa; this file only supplies the executable's own
@@ -23,6 +24,7 @@ USE_MPI  ?= TRUE
 USE_OMP  ?= FALSE
 USE_CUDA ?= FALSE
 USE_HIP  ?= FALSE
+USE_SYCL ?= FALSE
 
 EBASE = muphfasa
 

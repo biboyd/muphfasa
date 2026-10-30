@@ -1,5 +1,5 @@
 # Top-level CMakeLists for muphfasa: an AMReX-based Lattice Boltzmann solver.
-# Supports CPU (MPI + optional OpenMP) and GPU (CUDA, HIP) backends.
+# Supports CPU (MPI + optional OpenMP) and GPU (CUDA, HIP, SYCL) backends.
 # AMReX is vendored as a git submodule under external/amrex and built from
 # source via add_subdirectory(); mirrors the options exposed by GNUmakefile.
 
@@ -18,16 +18,21 @@ option(muphfasa_ENABLE_MPI  "Enable MPI distributed parallelism"   ON)
 option(muphfasa_ENABLE_OMP  "Enable OpenMP threading"              OFF)
 option(muphfasa_ENABLE_CUDA "Enable NVIDIA CUDA GPU backend"       OFF)
 option(muphfasa_ENABLE_HIP  "Enable AMD HIP GPU backend"           OFF)
+option(muphfasa_ENABLE_SYCL "Enable SYCL GPU backend (oneAPI DPC++/icpx or AdaptiveCpp)" OFF)
 option(muphfasa_ENABLE_EB   "Enable AMReX embedded-boundary support" OFF)
 
-if(muphfasa_ENABLE_CUDA AND muphfasa_ENABLE_HIP)
-    message(FATAL_ERROR "CUDA and HIP backends are mutually exclusive.")
+if( (muphfasa_ENABLE_CUDA AND muphfasa_ENABLE_HIP) OR
+    (muphfasa_ENABLE_CUDA AND muphfasa_ENABLE_SYCL) OR
+    (muphfasa_ENABLE_HIP  AND muphfasa_ENABLE_SYCL) )
+    message(FATAL_ERROR "CUDA, HIP and SYCL backends are mutually exclusive.")
 endif()
 
 if(muphfasa_ENABLE_CUDA)
     set(AMReX_GPU_BACKEND "CUDA" CACHE STRING "" FORCE)
 elseif(muphfasa_ENABLE_HIP)
     set(AMReX_GPU_BACKEND "HIP" CACHE STRING "" FORCE)
+elseif(muphfasa_ENABLE_SYCL)
+    set(AMReX_GPU_BACKEND "SYCL" CACHE STRING "" FORCE)
 else()
     set(AMReX_GPU_BACKEND "NONE" CACHE STRING "" FORCE)
 endif()

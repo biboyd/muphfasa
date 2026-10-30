@@ -37,6 +37,8 @@ make -j$(nproc) DIM=2
 make -j$(nproc) DIM=2 USE_MPI=FALSE
 make -j$(nproc) DIM=3 DEBUG=TRUE
 make -j$(nproc) DIM=3 USE_EB=TRUE        # embedded-boundary support (off by default)
+make -j$(nproc) DIM=3 USE_SYCL=TRUE      # SYCL build with Intel oneAPI (USE_SYCL=TRUE forces
+                                         # COMP=sycl -> icpx; COMP=intel resolves to the same icpx)
 
 # clean
 make clean
@@ -58,6 +60,10 @@ cmake --build build2d -j$(nproc)
 # with EB or without MPI
 cmake -S . -B build -Dmuphfasa_ENABLE_EB=ON -Dmuphfasa_ENABLE_MPI=OFF
 cmake --build build -j$(nproc)
+
+# 3-D with MPI + SYCL (Intel oneAPI DPC++: icpx; AdaptiveCpp's acpp also works)
+cmake -S . -B build-sycl -Dmuphfasa_DIM=3 -Dmuphfasa_ENABLE_SYCL=ON -DCMAKE_CXX_COMPILER=icpx
+cmake --build build-sycl -j$(nproc)
 ```
 
 The CMake binary is `build/muphfasa` (or `build2d/muphfasa`).
@@ -70,7 +76,8 @@ The CMake binary is `build/muphfasa` (or `build2d/muphfasa`).
 | `USE_EB=TRUE/FALSE` | `muphfasa_ENABLE_EB=ON/OFF` | `FALSE/OFF` | AMReX embedded-boundary support |
 | `USE_MPI=TRUE/FALSE` | `muphfasa_ENABLE_MPI=ON/OFF` | `TRUE/ON` | MPI parallelism |
 | `USE_OMP=TRUE/FALSE` | `muphfasa_ENABLE_OMP=ON/OFF` | `FALSE/OFF` | OpenMP threading |
-| `USE_CUDA/HIP=TRUE` | `muphfasa_ENABLE_CUDA/HIP=ON` | `FALSE/OFF` | GPU backends (mutually exclusive) |
+| `USE_CUDA/HIP=TRUE` | `muphfasa_ENABLE_CUDA/HIP=ON` | `FALSE/OFF` | NVIDIA/AMD GPU backends (mutually exclusive) |
+| `USE_SYCL=TRUE` | `muphfasa_ENABLE_SYCL=ON` | `FALSE/OFF` | SYCL GPU backend (DPC++/icpx or AdaptiveCpp; GNUMake forces `COMP=sycl`). Mutually exclusive with CUDA/HIP |
 | `DEBUG=TRUE/FALSE` | `CMAKE_BUILD_TYPE=Debug/Release` | `FALSE/Release` | Debug build |
 | — | `muphfasa_BUILD_TESTS=ON/OFF` | `OFF` | Build unit + regression tests |
 
