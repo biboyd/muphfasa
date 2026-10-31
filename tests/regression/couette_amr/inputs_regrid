@@ -33,5 +33,5 @@ amr.chk_int    = -1
 amr.plot_file  = plt
 
 couette_amr.min_finest = 2
-couette_amr.max_err        = 2.5e-5   # observed 1.55e-5
+couette_amr.max_err        = 2.5e-5   # observed 1.5e-5
 couette_amr.max_mass_drift = 1.e-10

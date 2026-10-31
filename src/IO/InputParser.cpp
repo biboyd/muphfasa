@@ -363,6 +363,14 @@ int InputParser::regridInterval() const
     return val;
 }
 
+std::string InputParser::interpType() const
+{
+    amrex::ParmParse pp("amr");
+    std::string val = "consistent";
+    pp.query("interp", val);
+    return val;
+}
+
 bool InputParser::tagBox(int lev, std::vector<amrex::Real>& lo,
                          std::vector<amrex::Real>& hi) const
 {

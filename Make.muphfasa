@@ -34,7 +34,7 @@ include $(AMREX_HOME)/Tools/GNUMake/Make.defs
 # ── AMReX library modules ───────────────────────────────────────────────────
 # Base    : core data structures (MultiFab, BoxArray, Geometry, ParmParse, ...)
 # Boundary: ghost-cell/boundary-fill infrastructure, used by the EB module
-# AmrCore : Interpolater base class, used by the EB module
+# AmrCore : AmrCore, FillPatch and Interpolaters (AMR solver), also used by EB
 # EB      : embedded-boundary geometry (AMReX_EB2.H, AMReX_EBFabFactory.H)
 Pdirs := Base Boundary AmrCore
 ifeq ($(USE_EB),TRUE)

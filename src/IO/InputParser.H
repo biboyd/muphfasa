@@ -100,6 +100,10 @@ public:
     int         nErrorBuf()       const;  // amr.n_error_buf (default 2)
     amrex::Real gridEff()         const;  // amr.grid_eff (default 0.7)
     int         regridInterval()  const;  // amr.regrid_int (default 0 = static)
+    // amr.interp: coarse -> fine spatial interpolation of populations,
+    // "consistent" (default), or one of the AMReX interpolaters "quadratic",
+    // "lincc", "cell_cons" or "bilinear" (for comparison only).
+    std::string interpType()      const;
 
     // Static refinement box for tagging level lev (cells of level lev whose
     // centres lie inside [box_lo, box_hi], physical units, are refined):

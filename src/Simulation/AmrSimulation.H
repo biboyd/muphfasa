@@ -21,6 +21,7 @@
 
 #include <AMReX_AmrCore.H>
 #include <AMReX_BCRec.H>
+#include <AMReX_Interpolater.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_PhysBCFunct.H>
 
@@ -102,6 +103,8 @@ private:
     bool m_has_forcing = false;
     int  m_regrid_int  = 0;
     amrex::Real m_vort_thresh = amrex::Real(0.0);
+    // Coarse -> fine spatial interpolater (amr.interp).
+    amrex::Interpolater* m_interp = nullptr;
 
     // ── Per-level state ───────────────────────────────────────────────────
     amrex::Vector<amrex::MultiFab> m_fin;       // post-collision, nGhost ghosts

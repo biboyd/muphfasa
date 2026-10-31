@@ -96,6 +96,29 @@ AmrSimulationImpl<LatticeTag, CollisionModel>::AmrSimulationImpl(const InputPars
     m_regrid_int  = params.regridInterval();
     m_vort_thresh = params.vorticityThreshold();
 
+    // Coarse cells next to the coarse/fine boundary hold averages of fine
+    // children (averageDown), and the default interpolater inverts that
+    // average to third order (AvgConsistentInterp in AmrInterface.H). The
+    // AMReX interpolaters are kept for comparison. Each has an O(dx^2) error
+    // in the ghost populations, which shows up as a first-order velocity
+    // error (amr_implementation.md, 3.3).
+    const std::string interp = params.interpType();
+    if (interp == "consistent") {
+        m_interp = &avgConsistentInterp();
+    } else if (interp == "quadratic") {
+        m_interp = &amrex::quadratic_interp;
+    } else if (interp == "lincc") {
+        m_interp = &amrex::lincc_interp;
+    } else if (interp == "cell_cons") {
+        m_interp = &amrex::cell_cons_interp;
+    } else if (interp == "bilinear") {
+        m_interp = &amrex::cell_bilinear_interp;
+    } else {
+        amrex::Abort("amr.interp must be consistent, quadratic, lincc, cell_cons or bilinear (got '"
+                     + interp + "')");
+    }
+    amrex::Print() << "AMR coarse->fine interpolation: " << interp << "\n";
+
     m_fin.resize(nlev);
     m_fout.resize(nlev);
     m_fpre_new.resize(nlev);
@@ -299,7 +322,7 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::fillGhosts(int lev, amrex::R
     amrex::FillPatchTwoLevels(m_fin[lev], time, cmf, ct, fmf, ft,
                               0, 0, LatticeTag::Q, Geom(clev), Geom(lev),
                               *m_extrap_bc[clev], 0, *m_phys_bc[lev], 0,
-                              refRatio(clev), &amrex::lincc_interp, m_bcs_interp, 0);
+                              refRatio(clev), m_interp, m_bcs_interp, 0);
 }
 
 template <typename LatticeTag, typename CollisionModel>
@@ -318,14 +341,14 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::fillFromLevels(
         amrex::InterpFromCoarseLevel(dst, time, conv, 0, 0, LatticeTag::Q,
                                      Geom(clev), Geom(lev),
                                      *m_extrap_bc[clev], 0, fbc, 0,
-                                     refRatio(clev), &amrex::lincc_interp, m_bcs_interp, 0);
+                                     refRatio(clev), m_interp, m_bcs_interp, 0);
     } else {
         amrex::Vector<amrex::MultiFab*> fmf = {const_cast<amrex::MultiFab*>(old_fine)};
         amrex::Vector<amrex::Real> ft = {time};
         amrex::FillPatchTwoLevels(dst, time, cmf, ct, fmf, ft,
                                   0, 0, LatticeTag::Q, Geom(clev), Geom(lev),
                                   *m_extrap_bc[clev], 0, fbc, 0,
-                                  refRatio(clev), &amrex::lincc_interp, m_bcs_interp, 0);
+                                  refRatio(clev), m_interp, m_bcs_interp, 0);
     }
 }
 

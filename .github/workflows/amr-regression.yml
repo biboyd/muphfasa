@@ -1,0 +1,135 @@
+name: AMR regression
+
+# Builds the AMR Couette regression test (amr.max_level >= 1) and checks:
+#   1. test_couette_amr with each inputs file: composite error vs analytic,
+#      mass drift, finest level reached (pass/fail via exit code);
+#   2. convergence_amr.py: grid-convergence order of the composite error.
+# See amr_implementation.md for the scheme and the reference numbers.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/regression/couette_amr/**'
+      - 'external/amrex'
+      - '.github/workflows/amr-regression.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/regression/couette_amr/**'
+      - 'external/amrex'
+      - '.github/workflows/amr-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  amr-2d:
+    name: 2D D2Q9
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository (with AMReX submodule)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.x'
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Resolve AMReX submodule commit (cache key)
+        id: amrex
+        run: echo "sha=$(git -C external/amrex rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.ccache
+          key: amr-ccache-${{ runner.os }}-amrex-${{ steps.amrex.outputs.sha }}
+          restore-keys: |
+            amr-ccache-${{ runner.os }}-amrex-
+
+      - name: Configure ccache
+        run: |
+          echo "/usr/lib/ccache" >> "$GITHUB_PATH"
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=1G" >> "$GITHUB_ENV"
+
+      - name: Build test_couette_amr (2-D)
+        working-directory: tests/regression/couette_amr
+        run: make -j"$(nproc)"
+
+      - name: Static 3-level refinement at the moving wall
+        working-directory: tests/regression/couette_amr
+        run: ./test_couette_amr2d.gnu.ex inputs
+
+      - name: Interior refined band
+        working-directory: tests/regression/couette_amr
+        run: ./test_couette_amr2d.gnu.ex inputs_band
+
+      - name: Vorticity tagging + regridding
+        working-directory: tests/regression/couette_amr
+        run: ./test_couette_amr2d.gnu.ex inputs_regrid
+
+      - name: Forced (Poiseuille) channel
+        working-directory: tests/regression/couette_amr
+        run: ./test_couette_amr2d.gnu.ex inputs_poiseuille
+
+      - name: Grid-convergence study (2-D)
+        working-directory: tests/regression/couette_amr
+        run: python3 convergence_amr.py --ny-list 32 64 128 --min-order 1.8
+
+      - name: Steady forced-channel convergence (2-D)
+        working-directory: tests/regression/couette_amr
+        run: >
+          python3 convergence_amr.py --inputs inputs_poiseuille --ny-list 16 32 64
+          --target-time 1.5 --min-order 1.8 couette_amr.min_finest=0
+
+  amr-3d:
+    name: 3D D3Q19
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository (with AMReX submodule)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Resolve AMReX submodule commit (cache key)
+        id: amrex
+        run: echo "sha=$(git -C external/amrex rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.ccache
+          key: amr-ccache-${{ runner.os }}-amrex-${{ steps.amrex.outputs.sha }}
+          restore-keys: |
+            amr-ccache-${{ runner.os }}-amrex-
+
+      - name: Configure ccache
+        run: |
+          echo "/usr/lib/ccache" >> "$GITHUB_PATH"
+          echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=1G" >> "$GITHUB_ENV"
+
+      - name: Build test_couette_amr (3-D)
+        working-directory: tests/regression/couette_amr
+        run: make -j"$(nproc)" DIM=3
+
+      - name: Static 3-level refinement at the moving wall (3-D)
+        working-directory: tests/regression/couette_amr
+        run: ./test_couette_amr3d.gnu.ex inputs3d

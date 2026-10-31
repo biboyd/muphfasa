@@ -41,6 +41,7 @@ set(UNIT_TEST_NAMES
     test_bc_corners
     test_mass_conservation
     test_forcing
+    test_amr_convert
 )
 
 foreach(test_name IN LISTS UNIT_TEST_NAMES)
@@ -134,7 +135,7 @@ add_regression_analysis_test(uniform_force)
 # mass drift and finest-level checks are enforced through the exit code.
 add_regression_analysis_test(couette_amr)
 if(muphfasa_DIM EQUAL 2)
-    foreach(variant band regrid)
+    foreach(variant band regrid poiseuille)
         add_test(
             NAME regression_couette_amr_${variant}
             COMMAND $<TARGET_FILE:test_couette_amr> inputs_${variant}

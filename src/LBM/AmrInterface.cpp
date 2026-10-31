@@ -145,6 +145,150 @@ void convertPopulationsMF(const amrex::MultiFab& src_pre,
     amrex::Gpu::streamSynchronize();
 }
 
+// ── Average-consistent coarse -> fine interpolation ───────────────────────
+
+namespace {
+
+// First and second differences of crse component n along d at iv. Where a
+// neighbour lies outside `ok` (non-periodic domain exterior, or beyond the
+// coarse fab), they become second- or first-order one-sided differences.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void interpDifferences(amrex::Array4<amrex::Real const> const& c, int n, amrex::Box const& ok,
+                       amrex::IntVect const& iv, int d, amrex::Real& s, amrex::Real& k) noexcept
+{
+    const amrex::IntVect e = amrex::IntVect::TheDimensionVector(d);
+    const bool lo = ok.contains(iv - e);
+    const bool hi = ok.contains(iv + e);
+    const amrex::Real c0 = c(iv, n);
+    s = amrex::Real(0.0);
+    k = amrex::Real(0.0);
+    if (lo && hi) {
+        s = amrex::Real(0.5) * (c(iv + e, n) - c(iv - e, n));
+        k = c(iv + e, n) - amrex::Real(2.0) * c0 + c(iv - e, n);
+    } else if (hi) {
+        if (ok.contains(iv + 2 * e)) {
+            s = amrex::Real(0.5) * (-amrex::Real(3.0) * c0 + amrex::Real(4.0) * c(iv + e, n)
+                                    - c(iv + 2 * e, n));
+            k = c(iv + 2 * e, n) - amrex::Real(2.0) * c(iv + e, n) + c0;
+        } else {
+            s = c(iv + e, n) - c0;
+        }
+    } else if (lo) {
+        if (ok.contains(iv - 2 * e)) {
+            s = amrex::Real(0.5) * (amrex::Real(3.0) * c0 - amrex::Real(4.0) * c(iv - e, n)
+                                    + c(iv - 2 * e, n));
+            k = c0 - amrex::Real(2.0) * c(iv - e, n) + c(iv - 2 * e, n);
+        } else {
+            s = c0 - c(iv - e, n);
+        }
+    }
+}
+
+// Central (else first-order one-sided) first difference along d at iv.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real interpSlope(amrex::Array4<amrex::Real const> const& c, int n, amrex::Box const& ok,
+                        amrex::IntVect const& iv, int d) noexcept
+{
+    const amrex::IntVect e = amrex::IntVect::TheDimensionVector(d);
+    const bool lo = ok.contains(iv - e);
+    const bool hi = ok.contains(iv + e);
+    if (lo && hi) { return amrex::Real(0.5) * (c(iv + e, n) - c(iv - e, n)); }
+    if (hi)       { return c(iv + e, n) - c(iv, n); }
+    if (lo)       { return c(iv, n) - c(iv - e, n); }
+    return amrex::Real(0.0);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void avgConsistentInterpCell(amrex::IntVect const& fiv, int n,
+                             amrex::Array4<amrex::Real> const& fine, int fine_comp,
+                             amrex::Array4<amrex::Real const> const& crse, int crse_comp,
+                             amrex::IntVect const& ratio, amrex::Box const& ok) noexcept
+{
+    const amrex::IntVect civ = amrex::coarsen(fiv, ratio);
+    const int nc = crse_comp + n;
+    amrex::Real xi[AMREX_SPACEDIM];
+    amrex::Real val = crse(civ, nc);
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        const amrex::Real r = amrex::Real(ratio[d]);
+        xi[d] = (amrex::Real(fiv[d] - civ[d] * ratio[d]) + amrex::Real(0.5)) / r - amrex::Real(0.5);
+        const amrex::Real xi2_avg = (r * r - amrex::Real(1.0)) / (amrex::Real(12.0) * r * r);
+        amrex::Real s, k;
+        interpDifferences(crse, nc, ok, civ, d, s, k);
+        val += s * xi[d] + amrex::Real(0.5) * k * (xi[d] * xi[d] - xi2_avg);
+    }
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        for (int e = d + 1; e < AMREX_SPACEDIM; ++e) {
+            const amrex::IntVect ee = amrex::IntVect::TheDimensionVector(e);
+            const bool lo = ok.contains(civ - ee);
+            const bool hi = ok.contains(civ + ee);
+            amrex::Real m = amrex::Real(0.0);
+            if (lo && hi) {
+                m = amrex::Real(0.5) * (interpSlope(crse, nc, ok, civ + ee, d)
+                                      - interpSlope(crse, nc, ok, civ - ee, d));
+            } else if (hi) {
+                m = interpSlope(crse, nc, ok, civ + ee, d) - interpSlope(crse, nc, ok, civ, d);
+            } else if (lo) {
+                m = interpSlope(crse, nc, ok, civ, d) - interpSlope(crse, nc, ok, civ - ee, d);
+            }
+            val += m * xi[d] * xi[e];
+        }
+    }
+    fine(fiv, fine_comp + n) = val;
+}
+
+} // namespace
+
+amrex::Box AvgConsistentInterp::CoarseBox(const amrex::Box& fine, const amrex::IntVect& ratio)
+{
+    amrex::Box crse = amrex::coarsen(fine, ratio);
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        if (ratio[d] > 1) { crse.grow(d, 1); }
+    }
+    return crse;
+}
+
+amrex::Box AvgConsistentInterp::CoarseBox(const amrex::Box& fine, int ratio)
+{
+    return CoarseBox(fine, amrex::IntVect(ratio));
+}
+
+void AvgConsistentInterp::interp(const amrex::FArrayBox& crse, int crse_comp,
+                                 amrex::FArrayBox& fine, int fine_comp, int ncomp,
+                                 const amrex::Box& fine_region, const amrex::IntVect& ratio,
+                                 const amrex::Geometry& crse_geom,
+                                 const amrex::Geometry& /*fine_geom*/,
+                                 amrex::Vector<amrex::BCRec> const& /*bcr*/,
+                                 int /*actual_comp*/, int /*actual_state*/, amrex::RunOn runon)
+{
+    BL_PROFILE("AvgConsistentInterp::interp()");
+
+    // Usable coarse cells: inside the coarse fab and inside the domain,
+    // except in periodic directions where the ghost cells hold valid data.
+    amrex::Box ok = crse.box();
+    const amrex::Box& dom = crse_geom.Domain();
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        if (!crse_geom.isPeriodic(d)) {
+            ok.setSmall(d, amrex::max(ok.smallEnd(d), dom.smallEnd(d)));
+            ok.setBig(d, amrex::min(ok.bigEnd(d), dom.bigEnd(d)));
+        }
+    }
+
+    auto const& c = crse.const_array();
+    auto const& f = fine.array();
+    AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FLAG(runon, fine_region, ncomp, i, j, k, n,
+    {
+        amrex::ignore_unused(j, k);
+        avgConsistentInterpCell(amrex::IntVect(AMREX_D_DECL(i, j, k)), n,
+                                f, fine_comp, c, crse_comp, ratio, ok);
+    });
+}
+
+AvgConsistentInterp& avgConsistentInterp()
+{
+    static AvgConsistentInterp interp;
+    return interp;
+}
+
 // ── Explicit instantiations (dimension matched) ───────────────────────────
 #if (AMREX_SPACEDIM == 2)
 template void pullCollideFusedPreMF<D2Q9, BGK>(const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const&, bool);

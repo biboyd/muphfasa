@@ -1,0 +1,43 @@
+# Forced variant of ./inputs: Poiseuille startup (both walls at rest, body
+# force along x, same force/units as tests/regression/poiseuille/inputs:
+# U_max = F H^2/(8 nu) = 0.1 lattice). Exercises the Guo-force part of the
+# coarse/fine population rescaling (F_l = F_0 / 2^l). Level 1 covers the
+# lower half of the channel (interface at the centreline, where the
+# shear vanishes and the populations have an extremum) and level 2 the
+# lower quarter; both touch the bottom wall, where under BGK halfway
+# bounce-back the wall slip grows with tau_l (0.8, 1.1, 1.7).
+# The steady error is sensitive to the coarse -> fine interpolation
+# (amr_implementation.md, 3.3). At 5000 steps: consistent 5.0e-4 (single
+# level 5.1e-4), quadratic 3.4e-3, lincc 1.1e-2.
+
+grid.ncells        = 4 32
+grid.max_grid_size = 32
+
+amr.max_level       = 2
+amr.blocking_factor = 4
+amr.n_error_buf     = 0
+tagging.box_lo_0    = 0.0   0.0
+tagging.box_hi_0    = 0.125 0.5
+tagging.box_lo_1    = 0.0   0.0
+tagging.box_hi_1    = 0.125 0.25
+
+sim.max_step     = 5000
+lbm.lattice_type = D2Q9
+units.ref_length   = 1.0
+units.ref_velocity = 1.0
+units.Re           = 32.0
+forcing.accel      = 0.125  0.0
+
+bc.lo_type = Periodic  NoSlip
+bc.hi_type = Periodic  NoSlip
+
+geometry.prob_lo = 0.0    0.0
+geometry.prob_hi = 0.125  1.0
+
+amr.plot_int   = 500
+amr.chk_int    = -1
+amr.plot_file  = plt
+
+couette_amr.min_finest     = 2
+couette_amr.max_err        = 7.5e-4   # observed 5.0e-4
+couette_amr.max_mass_drift = 1.e-10   # observed 4.1e-13

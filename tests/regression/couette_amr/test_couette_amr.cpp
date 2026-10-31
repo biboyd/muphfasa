@@ -2,7 +2,9 @@
 // hierarchy (amr.max_level >= 1). Supports 2D and 3D builds.
 //
 // Same problem as tests/regression/couette (see test_couette.cpp for the
-// analytic solution); here the error is measured on the composite
+// analytic solution), optionally with a wall-parallel body force
+// (forcing.accel, plane Couette-Poiseuille; with both walls at rest this is
+// the Poiseuille startup). Here the error is measured on the composite
 // solution: every level contributes the cells that are not covered by a
 // finer level. Under acoustic scaling lattice velocities are level
 // invariant and level l has spacing 2^-l in level-0 lattice units, so the
@@ -14,7 +16,8 @@
 // truncation error, while the single-level solver conserves it exactly.
 //
 // Optional pass/fail thresholds (exit code 1 when exceeded):
-//   couette_amr.max_err        inf-norm |u - u_exact| / U0 at the final time
+//   couette_amr.max_err        inf-norm |u - u_exact| / U_ref at the final time
+//                              (U_ref = max(|U0|, F H^2 / (8 nu)))
 //   couette_amr.max_mass_drift |M(t) - M(0)| / M(0) at the final time
 //   couette_amr.min_finest     minimum finest level that must exist
 
@@ -42,17 +45,24 @@ constexpr amrex::Real kPi = amrex::Real(3.14159265358979323846);
 // Wall-normal direction: y in 2D, z in 3D (same convention as test_couette).
 constexpr int WALL_DIM = (AMREX_SPACEDIM == 2 ? 1 : 2);
 
+// Startup of plane Couette-Poiseuille flow from rest: top wall moving at
+// U0, body force F along x. u_t = nu u_yy + F is linear, so the solution is
+// the Couette series (see test_couette.cpp) plus the Poiseuille series
+//   F y (H - y) / (2 nu) - sum_{n odd} 4 F H^2 / (nu n^3 pi^3)
+//                          sin(n pi y / H) exp(-n^2 pi^2 nu t / H^2).
 AMREX_GPU_HOST_DEVICE
-amrex::Real analyticCouette(amrex::Real y, amrex::Real H, amrex::Real U0,
-                            amrex::Real nu, amrex::Real t)
+amrex::Real analyticChannel(amrex::Real y, amrex::Real H, amrex::Real U0,
+                            amrex::Real F, amrex::Real nu, amrex::Real t)
 {
-    amrex::Real u = U0 * y / H;
+    amrex::Real u = U0 * y / H + F * y * (H - y) / (amrex::Real(2.0) * nu);
     for (int n = 1; n <= 200; ++n) {
         const amrex::Real exp_arg = -amrex::Real(n * n) * kPi * kPi * nu * t / (H * H);
         if (exp_arg < -50) { break; }
         const amrex::Real sign = (n % 2 == 0) ? amrex::Real(1.0) : amrex::Real(-1.0);
-        u += (amrex::Real(2.0) * U0 * sign / (n * kPi)) * std::sin(n * kPi * y / H)
-             * std::exp(exp_arg);
+        const amrex::Real npi  = n * kPi;
+        amrex::Real a = amrex::Real(2.0) * U0 * sign / npi;
+        if (n % 2 == 1) { a -= amrex::Real(4.0) * F * H * H / (nu * npi * npi * npi); }
+        u += a * std::sin(npi * y / H) * std::exp(exp_arg);
     }
     return u;
 }
@@ -78,7 +88,8 @@ struct Diagnostics {
     amrex::Real mass = 0;              // composite sum(rho dV), level-0 units
 };
 
-Diagnostics diagnose(const ISimulation& sim, amrex::Real H, amrex::Real U0, amrex::Real nu)
+Diagnostics diagnose(const ISimulation& sim, amrex::Real H, amrex::Real U0,
+                     amrex::Real F, amrex::Real nu, amrex::Real Uref)
 {
     Diagnostics d;
     const amrex::Real t = sim.time();
@@ -97,11 +108,11 @@ Diagnostics diagnose(const ISimulation& sim, amrex::Real H, amrex::Real U0, amre
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
                 const int iv[3] = {i, j, k};
                 const amrex::Real y = (iv[WALL_DIM] + amrex::Real(0.5)) * h;
-                amrex::Real emax = std::abs(u(i, j, k, 0) - analyticCouette(y, H, U0, nu, t));
+                amrex::Real emax = std::abs(u(i, j, k, 0) - analyticChannel(y, H, U0, F, nu, t));
                 for (int c = 1; c < AMREX_SPACEDIM; ++c) {
                     emax = amrex::max(emax, std::abs(u(i, j, k, c)));
                 }
-                e(i, j, k) = m(i, j, k) * emax / U0;
+                e(i, j, k) = m(i, j, k) * emax / Uref;
             });
         }
         const amrex::Real lev_err = err.max(0);
@@ -138,6 +149,15 @@ int main(int argc, char* argv[])
         const amrex::Real nu  = (tau - amrex::Real(0.5)) / amrex::Real(3.0);
         const amrex::Real U0  = sim->units().toLatticeVelocity(
             params.Uwall()[faceIndex(WALL_DIM, 1)][0]);
+        const amrex::Real F   = sim->units().toLatticeAcceleration(params.forcingAccel()[0]);
+        for (int d = 1; d < AMREX_SPACEDIM; ++d) {
+            AMREX_ALWAYS_ASSERT_WITH_MESSAGE(params.forcingAccel()[d] == amrex::Real(0.0),
+                "test_couette_amr: only a wall-parallel (x) body force is supported");
+        }
+        // Errors are reported relative to the larger of the wall speed and
+        // the steady Poiseuille centreline velocity F H^2 / (8 nu).
+        const amrex::Real Uref = amrex::max(std::abs(U0), std::abs(F) * H * H / (amrex::Real(8.0) * nu));
+        amrex::Print() << "U0=" << U0 << " F=" << F << " nu=" << nu << " Uref=" << Uref << "\n";
 
         amrex::Real max_err = -1, max_drift = -1;
         int min_finest = 0;
@@ -149,7 +169,7 @@ int main(int argc, char* argv[])
         }
 
         sim->updateMacroscopic();
-        const amrex::Real mass0 = diagnose(*sim, H, U0, nu).mass;
+        const amrex::Real mass0 = diagnose(*sim, H, U0, F, nu, Uref).mass;
         amrex::Print() << "Finest level: " << sim->finestLevel()
                        << "  initial mass: " << mass0 << "\n";
 
@@ -162,13 +182,13 @@ int main(int argc, char* argv[])
             sim->writeOutput(step);
             max_finest = amrex::max(max_finest, sim->finestLevel());
             if (plot_int > 0 && step % plot_int == 0) {
-                last = diagnose(*sim, H, U0, nu);  // writeOutput updated macros
+                last = diagnose(*sim, H, U0, F, nu, Uref);  // writeOutput updated macros
                 report(last, step, mass0);
             }
         }
         if (plot_int <= 0 || max_step % plot_int != 0) {
             sim->updateMacroscopic();
-            last = diagnose(*sim, H, U0, nu);
+            last = diagnose(*sim, H, U0, F, nu, Uref);
             report(last, max_step, mass0);
         }
 
