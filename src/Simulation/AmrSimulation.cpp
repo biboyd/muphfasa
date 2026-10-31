@@ -467,19 +467,21 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::ErrorEst(
     }
 
     // Velocity (Guo) from the current pre-collision populations, with one
-    // ghost layer for centred differences.
+    // ghost layer for centred differences. Ghosts that FillBoundary cannot
+    // fill (non-periodic domain faces, coarse/fine boundaries) keep a
+    // sentinel and cells whose stencil touches one are not vorticity-tagged.
+    constexpr amrex::Real kUnset = amrex::Real(1.e30);
     amrex::MultiFab rho, vel;
     if (use_vort) {
         rho.define(grids[lev], dmap[lev], 1, 0);
         vel.define(grids[lev], dmap[lev], AMREX_SPACEDIM, 1);
-        vel.setVal(amrex::Real(0.0));
+        vel.setVal(kUnset);
         computeMacroscopic<LatticeTag>(m_fpre_new[lev], rho, vel, m_lp[lev].F);
         vel.FillBoundary(Geom(lev).periodicity());
     }
     // Lattice vorticity of level lev in units of level-0 lattice spacing.
     const amrex::Real vscale = amrex::Real(1 << lev);
     const amrex::Real vthresh = m_vort_thresh;
-    const amrex::Box domain = Geom(lev).Domain();
 
     for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi) {
         const amrex::Box bx = mfi.validbox();
@@ -499,9 +501,15 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::ErrorEst(
                 flag = inside;
             }
             if (use_vort) {
-                // one-sided at non-periodic domain edges: skip those cells
-                const amrex::IntVect cell(AMREX_D_DECL(i, j, k));
-                if (domain.strictly_contains(cell)) {
+                bool valid = true;
+                for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                    const int di = (d == 0), dj = (d == 1), dk = (d == 2);
+                    for (int c = 0; c < AMREX_SPACEDIM; ++c) {
+                        valid = valid && u(i+di, j+dj, k+dk, c) < kUnset
+                                      && u(i-di, j-dj, k-dk, c) < kUnset;
+                    }
+                }
+                if (valid) {
 #if (AMREX_SPACEDIM == 2)
                     const amrex::Real w = amrex::Real(0.5) *
                         ((u(i+1,j,k,1) - u(i-1,j,k,1)) - (u(i,j+1,k,0) - u(i,j-1,k,0)));

@@ -1,0 +1,37 @@
+# Variant of ./inputs with dynamic refinement: level 1 follows the shear
+# layer that diffuses away from the impulsively started top wall
+# (tagging.vort_thresh on the lattice vorticity, regridding every 10
+# coarse steps). Early on only the region near the moving wall is refined;
+# as the profile approaches the linear steady state (|du/dy| = U0/H = 3.1e-3
+# in level-0 lattice units) the fine level spreads and eventually goes away.
+# Exercises ErrorEst, MakeNewLevelFromCoarse, RemakeLevel and ClearLevel.
+
+grid.ncells        = 4 32
+grid.max_grid_size = 32
+
+amr.max_level       = 2
+amr.blocking_factor = 4
+amr.n_error_buf     = 2
+amr.regrid_int      = 10
+tagging.vort_thresh = 6.e-3
+
+sim.max_step     = 5000
+lbm.lattice_type = D2Q9
+units.ref_length   = 1.0
+units.ref_velocity = 1.0
+units.Re           = 32.0
+
+bc.lo_type   = Periodic  NoSlip
+bc.hi_type   = Periodic  MovingWall
+bc.hiy_Uwall = 1.  0.0
+
+geometry.prob_lo = 0.0    0.0
+geometry.prob_hi = 0.125  1.0
+
+amr.plot_int   = 500
+amr.chk_int    = -1
+amr.plot_file  = plt
+
+couette_amr.min_finest = 2
+couette_amr.max_err        = 2.5e-5   # observed 1.55e-5
+couette_amr.max_mass_drift = 1.e-10

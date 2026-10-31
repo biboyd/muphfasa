@@ -1,0 +1,33 @@
+# Variant of ./inputs: a single refined band in the middle of the channel,
+# so both coarse/fine interfaces sit inside the flow and the fine level has
+# no physical walls (only coarse/fine and periodic boundaries).
+
+grid.ncells        = 4 32
+grid.max_grid_size = 32
+
+amr.max_level       = 1
+amr.blocking_factor = 4
+amr.n_error_buf     = 0
+tagging.box_lo_0    = 0.0   0.25
+tagging.box_hi_0    = 0.125 0.75
+
+sim.max_step     = 5000
+lbm.lattice_type = D2Q9
+units.ref_length   = 1.0
+units.ref_velocity = 1.0
+units.Re           = 32.0
+
+bc.lo_type   = Periodic  NoSlip
+bc.hi_type   = Periodic  MovingWall
+bc.hiy_Uwall = 1.  0.0
+
+geometry.prob_lo = 0.0    0.0
+geometry.prob_hi = 0.125  1.0
+
+amr.plot_int   = 500
+amr.chk_int    = -1
+amr.plot_file  = plt
+
+couette_amr.min_finest = 1
+couette_amr.max_err        = 2.5e-5   # observed 1.55e-5
+couette_amr.max_mass_drift = 1.e-10

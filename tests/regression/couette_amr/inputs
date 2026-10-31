@@ -1,0 +1,53 @@
+# Regression test: plane Couette startup on a 3-level AMR hierarchy.
+# Same physical problem as tests/regression/couette/inputs (bottom wall at
+# rest, top wall moving at U0 = 1, periodic in x; see test_couette_amr.cpp).
+#
+# Refinement (static boxes in physical coordinates; tags are grown by
+# amr.n_error_buf and rounded to amr.blocking_factor):
+#   level 1 covers the upper half of the channel, level 2 the top quarter,
+#   so both fine levels touch the moving wall (halfway bounce-back on fine
+#   levels) and each has one coarse/fine interface inside the flow.
+# Under acoustic scaling tau_l = 2^l (tau_0 - 1/2) + 1/2: 0.8, 1.1, 1.7.
+
+# ── Grid ──────────────────────────────────────────────────────────────────
+grid.ncells        = 4 32
+grid.max_grid_size = 32
+grid.n_ghost       = 1
+
+# ── AMR ───────────────────────────────────────────────────────────────────
+amr.max_level       = 2
+amr.blocking_factor = 4
+amr.n_error_buf     = 0   # interfaces exactly at the tag-box edges
+tagging.box_lo_0    = 0.0   0.5
+tagging.box_hi_0    = 0.125 1.0
+tagging.box_lo_1    = 0.0   0.75
+tagging.box_hi_1    = 0.125 1.0
+
+# ── Simulation ────────────────────────────────────────────────────────────
+sim.max_step     = 5000
+sim.stop_time    = -1.0
+
+# ── LBM / units (tau_0 = 0.8, as in the single-level test) ────────────────
+lbm.lattice_type    = D2Q9
+units.ref_length    = 1.0
+units.ref_velocity  = 1.0
+units.Re            = 32.0
+
+# ── Boundary conditions ───────────────────────────────────────────────────
+bc.lo_type   = Periodic  NoSlip
+bc.hi_type   = Periodic  MovingWall
+bc.hiy_Uwall = 1.  0.0
+
+geometry.prob_lo = 0.0    0.0
+geometry.prob_hi = 0.125  1.0
+
+# ── Output ────────────────────────────────────────────────────────────────
+amr.plot_int   = 500
+amr.chk_int    = -1
+amr.plot_file  = plt
+amr.check_file = chk
+
+# ── Pass/fail thresholds (test_couette_amr.cpp) ───────────────────────────
+couette_amr.min_finest = 2
+couette_amr.max_err        = 1.5e-5   # observed 8.7e-6 (single level: 1.8e-5)
+couette_amr.max_mass_drift = 1.e-10   # observed 4e-13

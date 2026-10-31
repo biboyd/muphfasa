@@ -130,3 +130,15 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/regression/poiseuille
 )
 add_regression_analysis_test(uniform_force)
+# AMR (amr.max_level >= 1) variant of the Couette test: composite error,
+# mass drift and finest-level checks are enforced through the exit code.
+add_regression_analysis_test(couette_amr)
+if(muphfasa_DIM EQUAL 2)
+    foreach(variant band regrid)
+        add_test(
+            NAME regression_couette_amr_${variant}
+            COMMAND $<TARGET_FILE:test_couette_amr> inputs_${variant}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/regression/couette_amr
+        )
+    endforeach()
+endif()

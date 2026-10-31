@@ -79,8 +79,11 @@ For a fill of level l at time t:
    `fpre_new` converted by 3.2 into *fine post-collision* populations
    (cellwise at coarse resolution).
 2. `amrex::FillPatchTwoLevels` with `(conv_old, conv_new)` at
-   `(t_old, t_new)` (linear in time) and `lincc_interp` (unlimited,
-   conservative, linear in space). The coarse-patch physical BC on
+   `(t_old, t_new)` (linear in time) and `lincc_interp` (conservative,
+   linear in space, *limited* slopes). The unlimited `cell_cons_interp`
+   was tried: identical asymptotically, but larger interface error and
+   mass drift on coarse grids (couette_amr Ny=16: 1.4e-3 vs 9.0e-4,
+   drift 5e-7 vs 1e-14), so the limited version is kept. The coarse-patch physical BC on
    converted data is first-order extrapolation (only feeds interpolation
    slopes); fine physical ghosts are filled afterward by the real
    `BCManager` at the fine geometry.
@@ -111,8 +114,10 @@ before output.
 
 ### 3.6 Initialisation, tagging, regridding
 
-* Each level is initialised with `initData` on its own grids:
-  `fin = fpre = feq(rho, u)` (plus Guo correction when forced).
+* Level 0 is initialised with `initData` exactly as the single-level
+  solver: `fin = fpre = feq(rho, u)` (plus Guo correction when forced).
+  Finer levels are interpolated from converted coarse data (3.3), so an
+  `initData` override only has to handle level 0.
 * Tagging (`ErrorEst`): `tagging.box_lo/box_hi` per level (physical-space
   static boxes, used by tests) and/or `tagging.vort_thresh` (lattice
   vorticity magnitude * 2^l).
@@ -139,8 +144,8 @@ the `(Geometry, AmrInfo)` constructor so it reads **no** ParmParse keys
 ### 3.8 Output
 
 Multi-level plotfiles (`WriteMultiLevelPlotfile`) in physical units with
-the same variable names as single-level. Checkpoint: per-level `f` written
-(restart not supported yet, as in single level).
+the same variable names as single-level. Checkpoint: level-0 `f` only
+(restart is not supported by either solver).
 
 ## 4. Testing plan
 

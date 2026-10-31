@@ -1,0 +1,33 @@
+# 3-D variant of ./inputs (D3Q19, wall normal z): two refined levels
+# touching the moving wall at z = hi, interfaces at z = 0.5 and 0.75.
+
+grid.ncells        = 4 4 32
+grid.max_grid_size = 32
+
+amr.max_level       = 2
+amr.blocking_factor = 4
+amr.n_error_buf     = 0
+tagging.box_lo_0    = 0.0   0.0   0.5
+tagging.box_hi_0    = 0.125 0.125 1.0
+tagging.box_lo_1    = 0.0   0.0   0.75
+tagging.box_hi_1    = 0.125 0.125 1.0
+
+sim.max_step     = 5000
+lbm.lattice_type = D3Q19
+units.ref_length   = 1.0
+units.ref_velocity = 1.0
+units.Re           = 32.0
+
+bc.lo_type   = Periodic  Periodic  NoSlip
+bc.hi_type   = Periodic  Periodic  MovingWall
+bc.hiz_Uwall = 1.  0.0  0.0
+
+geometry.prob_lo = 0.0    0.0    0.0
+geometry.prob_hi = 0.125  0.125  1.0
+
+amr.plot_int   = 500
+amr.chk_int    = -1
+amr.plot_file  = plt
+
+couette_amr.min_finest     = 2
+couette_amr.max_mass_drift = 1.e-10
