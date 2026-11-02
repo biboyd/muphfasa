@@ -1,0 +1,65 @@
+# Regression test: advected decaying shear wave on 3-level AMR hierarchy.
+# Fully periodic domain, exact incompressible NS solution:
+#   u_x = A exp(-nu k^2 t) sin(k (y - V t)), u_y = V, rho = 1, k = 2 pi / Ny.
+# One wavelength per Ny cells in y. V = bg_frac * A.
+# tau pinned => nu_lat = 0.1, u_lat = nu_lat Re / N ~1.56e-3 (diffusive scaling
+# as in tgv2d). Run to nu k^2 t = 0.5 at t=519.
+#
+# Refinement (static boxes physical [0,1]^D, n_error_buf 0):
+#   level 1: [0.25,0.75]x[0.25,0.625]  (not full-width in x => corners &
+#            interfaces normal and tangential to wave)
+#   level 2: [0.375,0.625]x[0.375,0.5]
+# Under acoustic scaling tau_l = 2^l*(tau0-1/2)+1/2: 0.8, 1.1, 1.7.
+# grid.max_grid_size = 32 splits fine levels into several boxes.
+
+# ── Grid ──────────────────────────────────────────────────────────────────
+grid.ncells        = 64 64
+grid.max_grid_size = 32
+grid.n_ghost       = 1
+
+# ── AMR ───────────────────────────────────────────────────────────────────
+amr.max_level       = 2
+amr.blocking_factor = 8
+amr.n_error_buf     = 0
+tagging.box_lo_0    = 0.25 0.25
+tagging.box_hi_0    = 0.75 0.625
+tagging.box_lo_1    = 0.375 0.375
+tagging.box_hi_1    = 0.625 0.5
+
+# ── Simulation ────────────────────────────────────────────────────────────
+# nu k^2 t = 0.5 at t=519 (nu=0.1, k=2pi/64)
+sim.max_step     = 519
+sim.stop_time    = -1.0
+
+# ── LBM / units (tau pinned, diffusive scaling) ──────────────────────────
+lbm.lattice_type    = D2Q9
+lbm.tau             = 0.8
+units.ref_length    = 64.0
+units.ref_velocity  = 0.002
+units.Re            = 1.0
+
+# ── Shear wave background advection ───────────────────────────────────────
+shearwave.bg_frac = 2.0
+
+# ── Boundary conditions ───────────────────────────────────────────────────
+bc.lo_type = Periodic  Periodic
+bc.hi_type = Periodic  Periodic
+
+geometry.prob_lo = 0.0  0.0
+geometry.prob_hi = 1.0  1.0
+
+# ── Output ────────────────────────────────────────────────────────────────
+amr.plot_int   = 173
+amr.chk_int    = -1
+amr.plot_file  = plt
+amr.check_file = chk
+
+# ── Pass/fail thresholds (test_shearwave_amr.cpp) ─────────────────────────
+# N=64 tau=0.8 nu k^2 t=0.5, bg_frac=2: observed inf 1.22e-3 L2 7.94e-4 mass 4.1e-14 mom 1.9e-13
+# (amr.reflux = 0: mass 2.59e-9 mom 8.58e-7)
+# single level: inf 1.75e-3 L2 1.24e-3 mass 1.78e-14 mom 6.08e-13
+shearwave.min_finest     = 2
+shearwave.max_err        = 2.5e-3
+shearwave.max_l2_err     = 1.5e-3
+shearwave.max_mass_drift = 1.0e-10
+shearwave.max_mom_defect = 1.0e-10

@@ -105,6 +105,11 @@ private:
     amrex::Real m_vort_thresh = amrex::Real(0.0);
     // Coarse -> fine spatial interpolater (amr.interp).
     amrex::Interpolater* m_interp = nullptr;
+    // Start level 0 from feq + Chapman-Enskog fneq (amr.init_fneq).
+    bool m_init_fneq = true;
+    // Coarse/fine conservation correction (amr.reflux: 0 none, 1 global,
+    // 2 local).
+    int m_reflux = 1;
 
     // ── Per-level state ───────────────────────────────────────────────────
     amrex::Vector<amrex::MultiFab> m_fin;       // post-collision, nGhost ghosts
@@ -115,6 +120,18 @@ private:
     amrex::Vector<amrex::MultiFab> m_vel;
     amrex::Vector<amrex::Real>     m_t_new;
     amrex::Vector<amrex::Real>     m_t_old;
+
+    // ── Refluxing (index: coarse level of the coarse/fine pair) ───────────
+    // Registers (mass + momentum) of the current coarse step: coarse
+    // crossings on grids[lev], fine crossings on coarsen(grids[lev+1]) with
+    // two ghosts. Masks are rebuilt whenever the grids change.
+    amrex::Vector<amrex::MultiFab>  m_reflux_crse;
+    amrex::Vector<amrex::MultiFab>  m_reflux_fine;
+    amrex::Vector<amrex::iMultiFab> m_cmask;       // on grids[lev], 1 ghost
+    amrex::Vector<amrex::iMultiFab> m_cfmask;      // coarse mask on coarsen(grids[lev+1]), 2 ghosts
+    amrex::Vector<amrex::iMultiFab> m_fmask;       // on grids[lev+1], 1 ghost
+    amrex::Vector<amrex::BoxArray>  m_cmask_fba;   // grids[lev+1] m_cmask was built for
+    amrex::Vector<amrex::Real>      m_nuncovered;  // number of cells with m_cmask == 0
 
     // ── Boundary conditions ───────────────────────────────────────────────
     // LBM ghost fill (halfway bounce-back etc.) per level, and a
@@ -138,6 +155,9 @@ private:
     void fillFromLevels(int lev, amrex::Real time, amrex::MultiFab& dst,
                         const amrex::MultiFab* old_fine, bool post);
     void initLevelZero();
+    // (Re)build the masks of the pair (lev, lev+1) if the grids changed and
+    // zero its registers.
+    void beginReflux(int lev);
 };
 
 } // namespace muphfasa

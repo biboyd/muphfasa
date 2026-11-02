@@ -18,6 +18,13 @@
 //    with u the Guo half-force velocity (sum c f + F_s/2)/rho. rho and u are
 //    level invariant in lattice units under acoustic scaling.
 //
+//  * addInitialNonEquilibriumMF: adds the Chapman-Enskog non-equilibrium
+//    part of an initial velocity field to equilibrium populations.
+//
+//  * accumulateCoarseCrossingsMF / accumulateFineCrossingsMF /
+//    applyRefluxMF: exact mass and momentum refluxing across coarse/fine
+//    boundaries (amr.reflux; amr_implementation.md, 3.9).
+//
 //  * AvgConsistentInterp: coarse -> fine interpolater for the populations
 //    (amr.interp = consistent, the default; amr_implementation.md, 3.3).
 
@@ -25,6 +32,8 @@
 #define MUPHFASA_AMR_INTERFACE_H
 
 #include <AMReX_Array.H>
+#include <AMReX_Geometry.H>
+#include <AMReX_iMultiFab.H>
 #include <AMReX_Interpolater.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_REAL.H>
@@ -60,6 +69,60 @@ void convertPopulationsMF(const amrex::MultiFab& src_pre,
                           amrex::MultiFab* pre_mf, int pre_comp,
                           LevelParams const& src, LevelParams const& tgt,
                           int ngrow);
+
+// Adds the first-order Chapman-Enskog non-equilibrium part of the velocity
+// field vel (lattice units, dx = dt = 1 on this level),
+//
+//     fneq_n = -tau w_n rho / cs^2  Q_n:grad(u),   Q_n = c_n c_n - cs^2 I,
+//
+// to pre-collision populations fpre and (1 - 1/tau) fneq_n to post-collision
+// populations fpost, which must both hold feq(rho, u) on entry. grad(u) is
+// taken by central differences (one-sided next to a non-periodic domain
+// face); vel needs one ghost layer filled across box and periodic
+// boundaries. Starting from feq alone leaves every level to build its own
+// initial layer at its own tau and dt, so the coarse/fine interfaces are
+// inconsistent for the first steps and radiate acoustic waves.
+template <typename LatticeTag>
+void addInitialNonEquilibriumMF(const amrex::MultiFab& rho, const amrex::MultiFab& vel,
+                                amrex::MultiFab& fpre, amrex::MultiFab& fpost,
+                                amrex::Real tau, const amrex::Geometry& geom);
+
+// Coarse/fine refluxing. Over one coarse step the composite (uncovered
+// coarse + fine) mass changes only through populations crossing the
+// coarse/fine boundary, and the two levels see those crossings differently
+// (in particular where the boundary meets a wall or a corner of the fine
+// region). The registers (components: mass, then momentum) collect, per
+// uncovered coarse cell U,
+//
+//   coarse: sum of f*_i(U - c_i) over covered U - c_i   (gained from covered)
+//         - sum of f*_i(U)       over covered U + c_i   (lost to covered)
+//   fine:   weight * [ ghost populations pulled into fine valid cells
+//                    - fine populations streamed into ghost cells ],
+//           each attributed to the coarse link it corresponds to (see
+//           addFineCrossing in AmrInterface.cpp),
+//
+// all evaluated on the post-collision populations with ghosts filled, just
+// before the (sub)step's stream. Masks: cmask is 1 on covered coarse cells,
+// 0 on uncovered cells in the domain, -1 outside it; fmask (1 ghost) is 1 on
+// fine valid cells, 0 on coarse/fine ghosts, -1 outside the domain. Coarse
+// links leaving the domain are excluded: bounce-back returns those
+// populations to the cell they left.
+template <typename LatticeTag>
+void accumulateCoarseCrossingsMF(const amrex::MultiFab& fin, const amrex::iMultiFab& cmask,
+                                 amrex::MultiFab& reg);
+// Refinement ratio 2. reg and cmask are defined on coarsen(fine grids) with
+// two ghost cells; contributions land in reg's ghost cells.
+template <typename LatticeTag>
+void accumulateFineCrossingsMF(const amrex::MultiFab& fin, const amrex::iMultiFab& fmask,
+                               const amrex::iMultiFab& cmask, amrex::MultiFab& reg,
+                               amrex::Real weight);
+// Removes the accumulated composite change (reg) from each uncovered coarse
+// cell as an equilibrium-shaped increment w_i (drho + c_i.dj / cs2), which
+// carries exactly mass drho and momentum dj, in both the post- and the
+// pre-collision populations.
+template <typename LatticeTag>
+void applyRefluxMF(const amrex::MultiFab& reg, const amrex::iMultiFab& cmask,
+                   amrex::MultiFab& fpost, amrex::MultiFab& fpre);
 
 // Coarse -> fine interpolation consistent with average_down. Covered coarse
 // cells hold the mean of their fine children, so near the coarse/fine

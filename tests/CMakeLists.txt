@@ -134,12 +134,21 @@ add_regression_analysis_test(uniform_force)
 # AMR (amr.max_level >= 1) variant of the Couette test: composite error,
 # mass drift and finest-level checks are enforced through the exit code.
 add_regression_analysis_test(couette_amr)
+add_regression_analysis_test(shearwave_amr ${CMAKE_CURRENT_SOURCE_DIR}/regression/shearwave_amr/InitData.cpp)
 if(muphfasa_DIM EQUAL 2)
-    foreach(variant band regrid poiseuille)
+    foreach(variant band regrid poiseuille normal)
         add_test(
             NAME regression_couette_amr_${variant}
             COMMAND $<TARGET_FILE:test_couette_amr> inputs_${variant}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/regression/couette_amr
         )
+        # All variants write plt*/analytic_plt* into the same directory.
+        set_tests_properties(regression_couette_amr_${variant} PROPERTIES
+            RESOURCE_LOCK couette_amr_plotfiles)
     endforeach()
+    set_tests_properties(regression_couette_amr PROPERTIES
+        RESOURCE_LOCK couette_amr_plotfiles)
+    # Taylor-Green vortex with static refinement patches (genuinely 2-D
+    # interfaces and corners); shares tgv2d's initial condition.
+    add_regression_analysis_test(tgv2d_amr ${CMAKE_CURRENT_SOURCE_DIR}/regression/tgv2d/InitData.cpp)
 endif()

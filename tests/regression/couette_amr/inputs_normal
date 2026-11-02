@@ -1,0 +1,44 @@
+# Forced channel (Poiseuille startup, as ./inputs_poiseuille) with the
+# coarse/fine interfaces NORMAL to the walls: level 1 covers x in
+# [0.25, 0.75] across the whole channel, level 2 x in [0.375, 0.625] over the
+# lower half. Every interface ends on a wall and level 2 also has an
+# interior corner, where the levels resolve the diagonal populations
+# differently (amr_implementation.md, 3.9). Without refluxing the composite
+# mass drifts secularly (2.9e-5 after 2000 steps);
+# amr.reflux = 1 (global, default) makes it exact without changing the
+# error, while amr.reflux = 2 (local) is exact but first order.
+# At 2000 steps: reflux 1: err 4.6e-4, drift 1.8e-13; reflux 0: err 4.6e-4,
+# drift 2.9e-5; reflux 2: err 1.8e-3, drift 1.8e-13. Mode 0 fails the drift
+# threshold, mode 2 the error threshold.
+
+grid.ncells        = 32 32
+grid.max_grid_size = 32
+
+amr.max_level       = 2
+amr.blocking_factor = 4
+amr.n_error_buf     = 0
+tagging.box_lo_0    = 0.25  0.0
+tagging.box_hi_0    = 0.75  1.0
+tagging.box_lo_1    = 0.375 0.0
+tagging.box_hi_1    = 0.625 0.5
+
+sim.max_step     = 2000
+lbm.lattice_type = D2Q9
+units.ref_length   = 1.0
+units.ref_velocity = 1.0
+units.Re           = 32.0
+forcing.accel      = 0.125  0.0
+
+bc.lo_type = Periodic  NoSlip
+bc.hi_type = Periodic  NoSlip
+
+geometry.prob_lo = 0.0    0.0
+geometry.prob_hi = 1.0    1.0
+
+amr.plot_int   = 500
+amr.chk_int    = -1
+amr.plot_file  = plt
+
+couette_amr.min_finest     = 2
+couette_amr.max_err        = 7.5e-4   # observed 4.6e-4
+couette_amr.max_mass_drift = 1.e-10   # observed 1.8e-13

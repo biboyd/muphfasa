@@ -11,14 +11,20 @@
 // analytic profile is evaluated at y = (j + 1/2) 2^-l with H, nu and t all
 // in level-0 lattice units.
 //
-// Also checks the composite mass sum(rho dV) for drift: the coarse/fine
-// coupling (overlap + averaging, no refluxing) conserves mass only to
-// truncation error, while the single-level solver conserves it exactly.
+// Also checks the composite mass for drift. The conserved quantity is the
+// sum of the post-collision populations over the composite grid; with
+// amr.reflux = 1 (default) it is exact to round-off; without refluxing it
+// drifts secularly where a coarse/fine boundary meets a wall or turns a
+// corner (amr_implementation.md, 3.9). The
+// macroscopic sum(rho dV) is reported too: it is evaluated after one more
+// streaming step and therefore differs from it by one step's coarse/fine
+// crossing mismatch.
 //
 // Optional pass/fail thresholds (exit code 1 when exceeded):
 //   couette_amr.max_err        inf-norm |u - u_exact| / U_ref at the final time
 //                              (U_ref = max(|U0|, F H^2 / (8 nu)))
-//   couette_amr.max_mass_drift |M(t) - M(0)| / M(0) at the final time
+//   couette_amr.max_mass_drift |M(t) - M(0)| / M(0) at the final time, M the
+//                              composite sum of the post-collision populations
 //   couette_amr.min_finest     minimum finest level that must exist
 
 #include <AMReX.H>
@@ -85,7 +91,8 @@ struct Diagnostics {
     std::vector<amrex::Real> lev_err;  // per level, uncovered cells only
     std::vector<amrex::Real> lev_ymax; // wall-normal location y/H of lev_err
     amrex::Real err  = 0;              // composite inf-norm
-    amrex::Real mass = 0;              // composite sum(rho dV), level-0 units
+    amrex::Real mass  = 0;             // composite sum(rho dV), level-0 units
+    amrex::Real fmass = 0;             // composite sum(f dV), post-collision
 };
 
 Diagnostics diagnose(const ISimulation& sim, amrex::Real H, amrex::Real U0,
@@ -119,18 +126,24 @@ Diagnostics diagnose(const ISimulation& sim, amrex::Real H, amrex::Real U0,
         d.lev_err.push_back(lev_err);
         d.lev_ymax.push_back((err.maxIndex(0)[WALL_DIM] + amrex::Real(0.5)) * h / H);
         d.err = amrex::max(d.err, lev_err);
-        d.mass += amrex::MultiFab::Dot(mask, 0, rho, 0, 1, 0) * std::pow(h, AMREX_SPACEDIM);
+        const amrex::Real dv = std::pow(h, AMREX_SPACEDIM);
+        d.mass += amrex::MultiFab::Dot(mask, 0, rho, 0, 1, 0) * dv;
+        const amrex::MultiFab& f = sim.f(lev);
+        for (int q = 0; q < f.nComp(); ++q) {
+            d.fmass += amrex::MultiFab::Dot(mask, 0, f, q, 1, 0) * dv;
+        }
     }
     return d;
 }
 
-void report(const Diagnostics& d, int step, amrex::Real mass0)
+void report(const Diagnostics& d, int step, const Diagnostics& d0)
 {
     amrex::Print() << "At Time=" << step << ": Error=" << d.err << "  (levels:";
     for (std::size_t l = 0; l < d.lev_err.size(); ++l) {
         amrex::Print() << " " << d.lev_err[l] << " @y/H=" << d.lev_ymax[l];
     }
-    amrex::Print() << ")  MassDrift=" << std::abs(d.mass - mass0) / mass0 << "\n";
+    amrex::Print() << ")  MassDrift=" << std::abs(d.fmass - d0.fmass) / d0.fmass
+                   << "  (rho: " << std::abs(d.mass - d0.mass) / d0.mass << ")\n";
 }
 
 } // namespace
@@ -169,9 +182,9 @@ int main(int argc, char* argv[])
         }
 
         sim->updateMacroscopic();
-        const amrex::Real mass0 = diagnose(*sim, H, U0, F, nu, Uref).mass;
+        const Diagnostics d0 = diagnose(*sim, H, U0, F, nu, Uref);
         amrex::Print() << "Finest level: " << sim->finestLevel()
-                       << "  initial mass: " << mass0 << "\n";
+                       << "  initial mass: " << d0.fmass << "\n";
 
         const int max_step = params.maxStep();
         const int plot_int = params.plotInterval();
@@ -183,16 +196,16 @@ int main(int argc, char* argv[])
             max_finest = amrex::max(max_finest, sim->finestLevel());
             if (plot_int > 0 && step % plot_int == 0) {
                 last = diagnose(*sim, H, U0, F, nu, Uref);  // writeOutput updated macros
-                report(last, step, mass0);
+                report(last, step, d0);
             }
         }
         if (plot_int <= 0 || max_step % plot_int != 0) {
             sim->updateMacroscopic();
             last = diagnose(*sim, H, U0, F, nu, Uref);
-            report(last, max_step, mass0);
+            report(last, max_step, d0);
         }
 
-        const amrex::Real drift = std::abs(last.mass - mass0) / mass0;
+        const amrex::Real drift = std::abs(last.fmass - d0.fmass) / d0.fmass;
         amrex::Print() << "Final Steady state error: " << last.err << "\n"
                        << "Final mass drift: " << drift << "\n"
                        << "Finest level reached: " << max_finest << "\n";

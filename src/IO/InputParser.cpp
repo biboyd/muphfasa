@@ -371,6 +371,25 @@ std::string InputParser::interpType() const
     return val;
 }
 
+bool InputParser::initNonEquilibrium() const
+{
+    amrex::ParmParse pp("amr");
+    int val = 1;
+    pp.query("init_fneq", val);
+    return val != 0;
+}
+
+int InputParser::refluxMode() const
+{
+    amrex::ParmParse pp("amr");
+    int val = 1;
+    pp.query("reflux", val);
+    if (val < 0 || val > 2) {
+        amrex::Abort("amr.reflux must be 0 (none), 1 (global) or 2 (local)");
+    }
+    return val;
+}
+
 bool InputParser::tagBox(int lev, std::vector<amrex::Real>& lo,
                          std::vector<amrex::Real>& hi) const
 {

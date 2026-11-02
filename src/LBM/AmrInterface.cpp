@@ -145,6 +145,251 @@ void convertPopulationsMF(const amrex::MultiFab& src_pre,
     amrex::Gpu::streamSynchronize();
 }
 
+// ── Initial non-equilibrium populations ───────────────────────────────────
+
+template <typename LatticeTag>
+void addInitialNonEquilibriumMF(const amrex::MultiFab& rho, const amrex::MultiFab& vel,
+                                amrex::MultiFab& fpre, amrex::MultiFab& fpost,
+                                amrex::Real tau, const amrex::Geometry& geom)
+{
+    BL_PROFILE("addInitialNonEquilibriumMF()");
+    AMREX_ALWAYS_ASSERT(vel.nGrow() >= 1);
+
+    // Cells whose velocity may be used: the domain, extended across
+    // periodic faces.
+    amrex::Box ok = geom.Domain();
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        if (geom.isPeriodic(d)) { ok.grow(d, 1); }
+    }
+    const amrex::Real omega = amrex::Real(1.0) / tau;
+
+#ifdef _OPENMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+    for (amrex::MFIter mfi(fpre, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+        const amrex::Box bx = mfi.tilebox();
+        auto const& r    = rho.const_array(mfi);
+        auto const& u    = vel.const_array(mfi);
+        auto const& pre  = fpre.array(mfi);
+        auto const& post = fpost.array(mfi);
+        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            const amrex::IntVect iv(AMREX_D_DECL(i, j, k));
+            // g[a][b] = d u_b / d x_a
+            amrex::Real g[AMREX_SPACEDIM][AMREX_SPACEDIM];
+            for (int a = 0; a < AMREX_SPACEDIM; ++a) {
+                const amrex::IntVect e = amrex::IntVect::TheDimensionVector(a);
+                const bool lo = ok.contains(iv - e);
+                const bool hi = ok.contains(iv + e);
+                for (int b = 0; b < AMREX_SPACEDIM; ++b) {
+                    if (lo && hi) {
+                        g[a][b] = amrex::Real(0.5) * (u(iv + e, b) - u(iv - e, b));
+                    } else if (hi) {
+                        g[a][b] = u(iv + e, b) - u(iv, b);
+                    } else if (lo) {
+                        g[a][b] = u(iv, b) - u(iv - e, b);
+                    } else {
+                        g[a][b] = amrex::Real(0.0);
+                    }
+                }
+            }
+            amrex::Real div = amrex::Real(0.0);
+            for (int a = 0; a < AMREX_SPACEDIM; ++a) { div += g[a][a]; }
+            const amrex::Real fac = -tau * r(i, j, k) * LatticeTag::cs2inv;
+            for (int n = 0; n < LatticeTag::Q; ++n) {
+                const int c[3] = {LatticeTag::cx(n), LatticeTag::cy(n),
+#if (AMREX_SPACEDIM == 3)
+                                  LatticeTag::cz(n)
+#else
+                                  0
+#endif
+                };
+                amrex::Real qg = -LatticeTag::cs2 * div;   // Q_n : grad(u)
+                for (int a = 0; a < AMREX_SPACEDIM; ++a) {
+                    for (int b = 0; b < AMREX_SPACEDIM; ++b) {
+                        qg += c[a] * c[b] * g[a][b];
+                    }
+                }
+                const amrex::Real fneq = fac * LatticeTag::weights(n) * qg;
+                pre(i, j, k, n)  += fneq;
+                post(i, j, k, n) += (amrex::Real(1.0) - omega) * fneq;
+            }
+        });
+    }
+}
+
+// ── Coarse/fine refluxing ─────────────────────────────────────────────────
+
+namespace {
+
+template <typename LatticeTag>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::IntVect latticeVector(int n) noexcept
+{
+    return amrex::IntVect(AMREX_D_DECL(LatticeTag::cx(n), LatticeTag::cy(n), LatticeTag::cz(n)));
+}
+
+// Adds one fine coarse/fine crossing (the link x -> x + c, ratio 2, of
+// signed weighted population a; pu = coarse parent of its ghost end) to the
+// register. The crossing is matched to the coarse link X -> X + c whose
+// midpoint is nearest to its own: along each dimension with c_d != 0 the
+// fine midpoint lies either on a coarse channel or halfway between two, in
+// which case it is split equally. Matching link by link makes the register
+// vanish identically for a uniform state, including at corners of the fine
+// region, where the coarse and fine levels cross the boundary along
+// different diagonals. The contribution goes to the uncovered end of the
+// coarse link (its source if both ends are uncovered, pu if neither is).
+// Links with an end outside the domain have no coarse counterpart (the
+// coarse population bounces back): their mass goes to the uncovered end or
+// pu, but not their momentum, which is a difference in wall force between
+// the levels rather than a conservation error.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void addFineCrossing(amrex::Array4<amrex::Real> const& r, amrex::Array4<int const> const& cm,
+                     amrex::IntVect const& x, amrex::IntVect const& c, amrex::IntVect const& pu,
+                     amrex::Real a) noexcept
+{
+    amrex::IntVect X0 = amrex::coarsen(x, 2);
+    int odd = 0;
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+        if (c[d] == 0) { continue; }
+        // Twice the (real) coarse start index of a link with the same midpoint.
+        const int t2 = (c[d] > 0) ? x[d] - 1 : x[d];
+        if (t2 & 1) {
+            odd |= (1 << d);
+            X0[d] = (t2 - 1) >> 1;
+        } else {
+            X0[d] = t2 >> 1;
+        }
+    }
+    int nodd = 0;
+    for (int d = 0; d < AMREX_SPACEDIM; ++d) { nodd += (odd >> d) & 1; }
+    const amrex::Real w = a / amrex::Real(1 << nodd);
+
+    for (int s = 0; s < (1 << AMREX_SPACEDIM); ++s) {
+        if ((s & ~odd) != 0) { continue; }
+        amrex::IntVect X = X0;
+        for (int d = 0; d < AMREX_SPACEDIM; ++d) { X[d] += (s >> d) & 1; }
+        const int ms = cm(X);
+        const int md = cm(X + c);
+        amrex::IntVect U = pu;
+        bool mom = true;
+        if (ms == 0) {
+            U = X;
+        } else if (md == 0) {
+            U = X + c;
+        }
+        if (ms == -1 || md == -1) { mom = false; }
+        amrex::Gpu::Atomic::AddNoRet(&r(U, 0), w);
+        if (mom) {
+            for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                amrex::Gpu::Atomic::AddNoRet(&r(U, 1 + d), c[d] * w);
+            }
+        }
+    }
+}
+
+} // namespace
+
+template <typename LatticeTag>
+void accumulateCoarseCrossingsMF(const amrex::MultiFab& fin, const amrex::iMultiFab& cmask,
+                                 amrex::MultiFab& reg)
+{
+    BL_PROFILE("accumulateCoarseCrossingsMF()");
+    AMREX_ALWAYS_ASSERT(fin.nGrow() >= 1 && cmask.nGrow() >= 1);
+
+#ifdef _OPENMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+    for (amrex::MFIter mfi(reg, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+        const amrex::Box bx = mfi.tilebox();
+        auto const& f = fin.const_array(mfi);
+        auto const& m = cmask.const_array(mfi);
+        auto const& r = reg.array(mfi);
+        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            const amrex::IntVect iv(AMREX_D_DECL(i, j, k));
+            if (m(iv) != 0) { return; }
+            amrex::Real dm = amrex::Real(0.0);
+            amrex::Real dj[AMREX_SPACEDIM] = {};
+            for (int n = 1; n < LatticeTag::Q; ++n) {
+                const amrex::IntVect c = latticeVector<LatticeTag>(n);
+                amrex::Real a = amrex::Real(0.0);
+                if (m(iv - c) == 1) { a += f(iv - c, n); }
+                if (m(iv + c) == 1) { a -= f(iv, n); }
+                dm += a;
+                for (int d = 0; d < AMREX_SPACEDIM; ++d) { dj[d] += c[d] * a; }
+            }
+            r(iv, 0) += dm;
+            for (int d = 0; d < AMREX_SPACEDIM; ++d) { r(iv, 1 + d) += dj[d]; }
+        });
+    }
+}
+
+template <typename LatticeTag>
+void accumulateFineCrossingsMF(const amrex::MultiFab& fin, const amrex::iMultiFab& fmask,
+                               const amrex::iMultiFab& cmask, amrex::MultiFab& reg,
+                               amrex::Real weight)
+{
+    BL_PROFILE("accumulateFineCrossingsMF()");
+    AMREX_ALWAYS_ASSERT(fin.nGrow() >= 1 && fmask.nGrow() >= 1);
+    AMREX_ALWAYS_ASSERT(cmask.nGrow() >= 2 && reg.nGrow() >= 2);
+
+    // reg and cmask share fin's DistributionMapping (they are defined on the
+    // coarsened fine BoxArray), so the same MFIter index addresses all of
+    // them. Several fine links share a coarse cell: accumulate atomically,
+    // without tiling.
+    for (amrex::MFIter mfi(fin); mfi.isValid(); ++mfi) {
+        const amrex::Box vb = mfi.validbox();
+        auto const& f  = fin.const_array(mfi);
+        auto const& m  = fmask.const_array(mfi);
+        auto const& cm = cmask.const_array(mfi);
+        auto const& r  = reg.array(mfi);
+        amrex::ParallelFor(vb, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            const amrex::IntVect iv(AMREX_D_DECL(i, j, k));
+            for (int n = 1; n < LatticeTag::Q; ++n) {
+                const amrex::IntVect c = latticeVector<LatticeTag>(n);
+                if (m(iv - c) == 0) {        // pulled from a ghost
+                    addFineCrossing(r, cm, iv - c, c, amrex::coarsen(iv - c, 2),
+                                    weight * f(iv - c, n));
+                }
+                if (m(iv + c) == 0) {        // streamed into a ghost
+                    addFineCrossing(r, cm, iv, c, amrex::coarsen(iv + c, 2),
+                                    -weight * f(iv, n));
+                }
+            }
+        });
+    }
+}
+
+template <typename LatticeTag>
+void applyRefluxMF(const amrex::MultiFab& reg, const amrex::iMultiFab& cmask,
+                   amrex::MultiFab& fpost, amrex::MultiFab& fpre)
+{
+    BL_PROFILE("applyRefluxMF()");
+
+#ifdef _OPENMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+    for (amrex::MFIter mfi(reg, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+        const amrex::Box bx = mfi.tilebox();
+        auto const& r    = reg.const_array(mfi);
+        auto const& m    = cmask.const_array(mfi);
+        auto const& post = fpost.array(mfi);
+        auto const& pre  = fpre.array(mfi);
+        amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            const amrex::IntVect iv(AMREX_D_DECL(i, j, k));
+            if (m(iv) != 0) { return; }
+            const amrex::Real drho = -r(iv, 0);
+            for (int n = 0; n < LatticeTag::Q; ++n) {
+                const amrex::IntVect c = latticeVector<LatticeTag>(n);
+                amrex::Real cj = amrex::Real(0.0);
+                for (int d = 0; d < AMREX_SPACEDIM; ++d) { cj -= c[d] * r(iv, 1 + d); }
+                const amrex::Real df = LatticeTag::weights(n) * (drho + LatticeTag::cs2inv * cj);
+                post(iv, n) += df;
+                pre(iv, n)  += df;
+            }
+        });
+    }
+}
+
 // ── Average-consistent coarse -> fine interpolation ───────────────────────
 
 namespace {
@@ -293,6 +538,10 @@ AvgConsistentInterp& avgConsistentInterp()
 #if (AMREX_SPACEDIM == 2)
 template void pullCollideFusedPreMF<D2Q9, BGK>(const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const&, bool);
 template void convertPopulationsMF<D2Q9>(const amrex::MultiFab&, amrex::MultiFab*, int, amrex::MultiFab*, int, LevelParams const&, LevelParams const&, int);
+template void addInitialNonEquilibriumMF<D2Q9>(const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, const amrex::Geometry&);
+template void accumulateCoarseCrossingsMF<D2Q9>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&);
+template void accumulateFineCrossingsMF<D2Q9>(const amrex::MultiFab&, const amrex::iMultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::Real);
+template void applyRefluxMF<D2Q9>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::MultiFab&);
 #else
 template void pullCollideFusedPreMF<D3Q15, BGK>(const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const&, bool);
 template void pullCollideFusedPreMF<D3Q19, BGK>(const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const&, bool);
@@ -300,6 +549,18 @@ template void pullCollideFusedPreMF<D3Q27, BGK>(const amrex::MultiFab&, amrex::M
 template void convertPopulationsMF<D3Q15>(const amrex::MultiFab&, amrex::MultiFab*, int, amrex::MultiFab*, int, LevelParams const&, LevelParams const&, int);
 template void convertPopulationsMF<D3Q19>(const amrex::MultiFab&, amrex::MultiFab*, int, amrex::MultiFab*, int, LevelParams const&, LevelParams const&, int);
 template void convertPopulationsMF<D3Q27>(const amrex::MultiFab&, amrex::MultiFab*, int, amrex::MultiFab*, int, LevelParams const&, LevelParams const&, int);
+template void addInitialNonEquilibriumMF<D3Q15>(const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, const amrex::Geometry&);
+template void accumulateCoarseCrossingsMF<D3Q15>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&);
+template void accumulateFineCrossingsMF<D3Q15>(const amrex::MultiFab&, const amrex::iMultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::Real);
+template void applyRefluxMF<D3Q15>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::MultiFab&);
+template void addInitialNonEquilibriumMF<D3Q19>(const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, const amrex::Geometry&);
+template void accumulateCoarseCrossingsMF<D3Q19>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&);
+template void accumulateFineCrossingsMF<D3Q19>(const amrex::MultiFab&, const amrex::iMultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::Real);
+template void applyRefluxMF<D3Q19>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::MultiFab&);
+template void addInitialNonEquilibriumMF<D3Q27>(const amrex::MultiFab&, const amrex::MultiFab&, amrex::MultiFab&, amrex::MultiFab&, amrex::Real, const amrex::Geometry&);
+template void accumulateCoarseCrossingsMF<D3Q27>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&);
+template void accumulateFineCrossingsMF<D3Q27>(const amrex::MultiFab&, const amrex::iMultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::Real);
+template void applyRefluxMF<D3Q27>(const amrex::MultiFab&, const amrex::iMultiFab&, amrex::MultiFab&, amrex::MultiFab&);
 #endif
 
 } // namespace muphfasa

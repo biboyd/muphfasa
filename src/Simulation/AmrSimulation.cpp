@@ -53,6 +53,18 @@ amrex::AmrInfo makeAmrInfo(const InputParser& params)
     return info;
 }
 
+// Sets mask cells outside the (periodically extended) domain to -1.
+void markOutsideDomain(amrex::iMultiFab& mask, const amrex::Geometry& geom)
+{
+    const amrex::Box dom = geom.growPeriodicDomain(mask.nGrow());
+    for (amrex::MFIter mfi(mask); mfi.isValid(); ++mfi) {
+        auto const& m = mask.array(mfi);
+        amrex::ParallelFor(mfi.fabbox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) {
+            if (!dom.contains(amrex::IntVect(AMREX_D_DECL(i, j, k)))) { m(i, j, k) = -1; }
+        });
+    }
+}
+
 } // namespace
 
 template <typename LatticeTag, typename CollisionModel>
@@ -95,6 +107,8 @@ AmrSimulationImpl<LatticeTag, CollisionModel>::AmrSimulationImpl(const InputPars
 
     m_regrid_int  = params.regridInterval();
     m_vort_thresh = params.vorticityThreshold();
+    m_init_fneq   = params.initNonEquilibrium();
+    m_reflux      = params.refluxMode();
 
     // Coarse cells next to the coarse/fine boundary hold averages of fine
     // children (averageDown), and the default interpolater inverts that
@@ -127,6 +141,13 @@ AmrSimulationImpl<LatticeTag, CollisionModel>::AmrSimulationImpl(const InputPars
     m_vel.resize(nlev);
     m_t_new.resize(nlev, amrex::Real(0.0));
     m_t_old.resize(nlev, amrex::Real(0.0));
+    m_reflux_crse.resize(nlev);
+    m_reflux_fine.resize(nlev);
+    m_cmask.resize(nlev);
+    m_cfmask.resize(nlev);
+    m_fmask.resize(nlev);
+    m_cmask_fba.resize(nlev);
+    m_nuncovered.resize(nlev, amrex::Real(0.0));
 
     // Boundary conditions: one BCManager (lattice units are level
     // invariant), one PhysBCFunct per level geometry.
@@ -196,7 +217,18 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::initLevelZero()
     }
     // At equilibrium pre- and post-collision populations coincide.
     amrex::MultiFab::Copy(m_fpre_new[0], m_fin[0], 0, 0, LatticeTag::Q, 0);
-    amrex::MultiFab::Copy(m_fpre_old[0], m_fin[0], 0, 0, LatticeTag::Q, 0);
+    if (m_init_fneq) {
+        // Add the non-equilibrium part of the initial velocity field, so the
+        // finer levels (filled from these populations by the usual
+        // conversion) start with a consistent, rescaled fneq instead of each
+        // level relaxing from feq on its own time scale.
+        amrex::MultiFab vel(m_vel[0].boxArray(), m_vel[0].DistributionMap(), AMREX_SPACEDIM, 1);
+        amrex::MultiFab::Copy(vel, m_vel[0], 0, 0, AMREX_SPACEDIM, 0);
+        vel.FillBoundary(Geom(0).periodicity());
+        addInitialNonEquilibriumMF<LatticeTag>(m_rho[0], vel, m_fpre_new[0], m_fin[0],
+                                               m_lp[0].tau, Geom(0));
+    }
+    amrex::MultiFab::Copy(m_fpre_old[0], m_fpre_new[0], 0, 0, LatticeTag::Q, 0);
 }
 
 template <typename LatticeTag, typename CollisionModel>
@@ -375,6 +407,41 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::averageDown(int crse_lev)
     m_fpre_new[crse_lev].ParallelCopy(pre, 0, 0, LatticeTag::Q);
 }
 
+template <typename LatticeTag, typename CollisionModel>
+void AmrSimulationImpl<LatticeTag, CollisionModel>::beginReflux(int lev)
+{
+    const int flev = lev + 1;
+    const amrex::IntVect ratio = refRatio(lev);
+    AMREX_ALWAYS_ASSERT(ratio == amrex::IntVect(2));
+    constexpr int ncomp = 1 + AMREX_SPACEDIM;
+
+    if (!m_cmask[lev].ok() || m_cmask[lev].boxArray() != grids[lev]
+        || m_cmask[lev].DistributionMap() != dmap[lev] || m_cmask_fba[lev] != grids[flev]) {
+        m_cmask[lev] = amrex::makeFineMask(grids[lev], dmap[lev], amrex::IntVect(1), grids[flev],
+                                           ratio, Geom(lev).periodicity(), 0, 1);
+        markOutsideDomain(m_cmask[lev], Geom(lev));
+        m_cmask_fba[lev] = grids[flev];
+        m_reflux_crse[lev].define(grids[lev], dmap[lev], ncomp, 0);
+        m_nuncovered[lev] = amrex::Real(grids[lev].numPts())
+                          - amrex::Real(m_cmask[lev].sum(0, 0));
+    }
+    if (!m_fmask[lev].ok() || m_fmask[lev].boxArray() != grids[flev]
+        || m_fmask[lev].DistributionMap() != dmap[flev]) {
+        m_fmask[lev].define(grids[flev], dmap[flev], 1, 1);
+        m_fmask[lev].setVal(0);
+        m_fmask[lev].setVal(1, 0);
+        m_fmask[lev].FillBoundary(Geom(flev).periodicity());
+        markOutsideDomain(m_fmask[lev], Geom(flev));
+        const amrex::BoxArray cfba = amrex::coarsen(grids[flev], ratio);
+        m_cfmask[lev] = amrex::makeFineMask(cfba, dmap[flev], amrex::IntVect(2), grids[flev],
+                                            ratio, Geom(lev).periodicity(), 0, 1);
+        markOutsideDomain(m_cfmask[lev], Geom(lev));
+        m_reflux_fine[lev].define(cfba, dmap[flev], ncomp, 2);
+    }
+    m_reflux_crse[lev].setVal(amrex::Real(0.0));
+    m_reflux_fine[lev].setVal(amrex::Real(0.0));
+}
+
 // ── Time stepping ─────────────────────────────────────────────────────────
 
 template <typename LatticeTag, typename CollisionModel>
@@ -383,6 +450,19 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::timeStep(int lev)
     // Ghosts of fine levels are filled at the start of each substep, after
     // the coarse covered cells at the start time have been averaged down.
     if (lev > 0) { fillGhosts(lev, m_t_new[lev]); }
+
+    // Coarse/fine crossings of this (sub)step, from the populations about
+    // to stream (see applyRefluxMF below).
+    if (m_reflux != 0 && lev < finest_level) {
+        beginReflux(lev);
+        accumulateCoarseCrossingsMF<LatticeTag>(m_fin[lev], m_cmask[lev], m_reflux_crse[lev]);
+    }
+    if (m_reflux != 0 && lev > 0) {
+        const amrex::IntVect ratio = refRatio(lev - 1);
+        const amrex::Real weight = amrex::Real(1.0) / (AMREX_D_TERM(ratio[0], *ratio[1], *ratio[2]));
+        accumulateFineCrossingsMF<LatticeTag>(m_fin[lev], m_fmask[lev - 1], m_cfmask[lev - 1],
+                                              m_reflux_fine[lev - 1], weight);
+    }
 
     std::swap(m_fpre_old[lev], m_fpre_new[lev]);
     const amrex::Real omega = amrex::Real(1.0) / m_lp[lev].tau;
@@ -396,6 +476,28 @@ void AmrSimulationImpl<LatticeTag, CollisionModel>::timeStep(int lev)
         timeStep(lev + 1);
         timeStep(lev + 1);
         averageDown(lev);
+        if (m_reflux != 0) {
+            // The registers hold, per uncovered coarse cell, the composite
+            // (uncovered coarse + fine) mass and momentum change caused by the
+            // two levels seeing the boundary crossings differently.
+            m_reflux_crse[lev].ParallelAdd(m_reflux_fine[lev], 0, 0, 1 + AMREX_SPACEDIM, 2, 0,
+                                           Geom(lev).periodicity());
+            if (m_reflux == 1 && m_nuncovered[lev] > 0) {
+                // Global: only the net defect is removed, spread uniformly
+                // over the uncovered coarse cells. Where the boundary meets a
+                // wall or turns a corner the per-cell differences are O(u)
+                // per step and do not vanish with dx (the levels resolve a
+                // diagonal population near the corner differently), but they
+                // nearly cancel between corners; removing them cell by cell
+                // (local) turns them into source/sink pairs next to the
+                // corners (amr_implementation.md, 3.9).
+                for (int c = 0; c <= AMREX_SPACEDIM; ++c) {
+                    const amrex::Real tot = m_reflux_crse[lev].sum(c);
+                    m_reflux_crse[lev].setVal(tot / m_nuncovered[lev], c, 1);
+                }
+            }
+            applyRefluxMF<LatticeTag>(m_reflux_crse[lev], m_cmask[lev], m_fin[lev], m_fpre_new[lev]);
+        }
     }
 
     if (lev == 0) { fillGhosts(0, m_t_new[0]); }

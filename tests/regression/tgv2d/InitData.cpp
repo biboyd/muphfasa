@@ -34,6 +34,8 @@ void initData(amrex::MultiFab& rho, amrex::MultiFab& vel, const UnitConverter& u
     const amrex::Box domain = rho.boxArray().minimalBox();
     const int N = domain.length(0);
     const amrex::Real k = tgv::waveNumber(N);
+    amrex::Real U, V;
+    tgv::backgroundVelocity(u0, U, V);
 
     for (amrex::MFIter mfi(rho); mfi.isValid(); ++mfi) {
         const amrex::Box& bx = mfi.validbox();
@@ -46,8 +48,8 @@ void initData(amrex::MultiFab& rho, amrex::MultiFab& vel, const UnitConverter& u
             amrex::Real ux, uy;
             tgv::exactUV(x, y, k, u0, amrex::Real(0.0), amrex::Real(0.0), ux, uy);
             r(i, j, kc, 0) = tgv::exactRho(x, y, k, u0, amrex::Real(0.0), amrex::Real(0.0));
-            u(i, j, kc, 0) = ux;
-            u(i, j, kc, 1) = uy;
+            u(i, j, kc, 0) = U + ux;
+            u(i, j, kc, 1) = V + uy;
         });
     }
 }

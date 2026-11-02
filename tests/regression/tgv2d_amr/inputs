@@ -1,0 +1,63 @@
+# Regression test: 2-D Taylor-Green vortex decay on a 3-level AMR hierarchy.
+# Same problem as tests/regression/tgv2d/inputs (doubly periodic NxN domain,
+# one vortex pair per side, u0 = 1/640 and nu = 0.1 in level-0 lattice
+# units; InitData.cpp and TgvAnalytic.H are shared with that directory).
+#
+# Refinement (static boxes in physical coordinates, n_error_buf = 0 so the
+# interfaces sit exactly at the box edges): level 1 covers
+# [1/8, 5/8] x [1/4, 3/4], off-centre so no interface lies on a symmetry
+# line of the vortices, and level 2 covers [1/4, 1/2] x [3/8, 5/8]. All
+# interfaces cut through regions with mixed derivatives u_xy, v_xy != 0.
+# grid.max_grid_size = 32 splits each fine level into several boxes.
+# Under acoustic scaling tau_l = 2^l (tau_0 - 1/2) + 1/2: 0.8, 1.1, 1.7.
+
+# ── Grid ──────────────────────────────────────────────────────────────────
+grid.ncells        = 64 64
+grid.max_grid_size = 32
+grid.n_ghost       = 1
+
+# ── AMR ───────────────────────────────────────────────────────────────────
+amr.max_level       = 2
+amr.blocking_factor = 8
+amr.n_error_buf     = 0
+tagging.box_lo_0    = 0.125 0.25
+tagging.box_hi_0    = 0.625 0.75
+tagging.box_lo_1    = 0.25  0.375
+tagging.box_hi_1    = 0.5   0.625
+
+# ── Simulation ────────────────────────────────────────────────────────────
+# nu k^2 t = 0.5 (amplitude decays to exp(-1)) at t = 519.
+sim.max_step     = 519
+sim.stop_time    = -1.0
+
+# ── LBM / units (as in tgv2d: tau pinned, u0 = ref_velocity in lattice
+#    units = nu_lat Re / N) ────────────────────────────────────────────────
+lbm.lattice_type    = D2Q9
+lbm.tau             = 0.8
+units.ref_length    = 64.0
+units.ref_velocity  = 0.002
+units.Re            = 1.0
+
+# ── Boundary conditions ───────────────────────────────────────────────────
+bc.lo_type = Periodic  Periodic
+bc.hi_type = Periodic  Periodic
+
+geometry.prob_lo = 0.0  0.0
+geometry.prob_hi = 1.0  1.0
+
+# ── Output ────────────────────────────────────────────────────────────────
+amr.plot_int   = 173
+amr.chk_int    = -1
+amr.plot_file  = plt
+amr.check_file = chk
+
+# ── Pass/fail thresholds (test_tgv2d_amr.cpp) ─────────────────────────────
+# N=64, tau=0.8, nu*k^2*t=0.5 (amr.reflux = 1, amr.init_fneq = 1): observed
+# inf 2.55e-3, L2 1.32e-3, mass drift 4e-16, momentum defect 5e-14
+# (amr.reflux = 0: momentum defect 7.3e-5).
+# (single level: inf 3.24e-3, L2 2.18e-3).
+tgv_amr.min_finest     = 2
+tgv_amr.max_err        = 6.0e-3
+tgv_amr.max_l2_err     = 2.5e-3
+tgv_amr.max_mass_drift = 1.e-10
+tgv_amr.max_mom_defect = 1.e-10

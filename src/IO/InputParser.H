@@ -104,6 +104,17 @@ public:
     // "consistent" (default), or one of the AMReX interpolaters "quadratic",
     // "lincc", "cell_cons" or "bilinear" (for comparison only).
     std::string interpType()      const;
+    // amr.init_fneq (default 1): start level 0 from feq plus the
+    // Chapman-Enskog non-equilibrium part of the initial velocity field
+    // instead of feq alone (amr_implementation.md, 3.6).
+    bool        initNonEquilibrium() const;
+    // amr.reflux: coarse/fine conservation correction (amr_implementation.md,
+    // 3.9). 0 = none, 1 = global (default: the net composite mass and
+    // momentum defect of each coarse step is removed uniformly from the
+    // uncovered coarse cells), 2 = local (per-cell refluxing, for comparison;
+    // also exact, but degrades accuracy where the boundary meets a wall or
+    // turns a corner).
+    int         refluxMode() const;
 
     // Static refinement box for tagging level lev (cells of level lev whose
     // centres lie inside [box_lo, box_hi], physical units, are refined):

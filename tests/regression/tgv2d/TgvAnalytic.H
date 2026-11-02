@@ -9,6 +9,11 @@
 //   v(x,y,t) =  u0 * sin(k*x) * cos(k*y) * exp(-2*nu*k^2*t)
 //   rho(x,y,t) = 1 - (u0^2/(4*cs2)) * (cos(2*k*x) + cos(2*k*y)) * exp(-4*nu*k^2*t)
 //
+// Optional uniform background velocity (U, V) (Galilean shift, used by the
+// AMR test to carry the vortices across coarse/fine interfaces): the field
+// is (U, V) + the above evaluated at (x - U t, y - V t); rho is unchanged.
+// It is set with tgv.bg = bx by (multiples of u0, default 0 0).
+//
 // Used by both InitData.cpp (t=0 initial condition, where nu drops out of
 // the decay factor entirely) and test_tgv2d.cpp (comparison against the
 // solver's output at any later time).
@@ -16,7 +21,9 @@
 #ifndef MUPHFASA_TGV_ANALYTIC_H
 #define MUPHFASA_TGV_ANALYTIC_H
 
+#include <AMReX_ParmParse.H>
 #include <AMReX_REAL.H>
+#include <AMReX_Vector.H>
 
 #include <cmath>
 
@@ -37,6 +44,15 @@ inline void exactUV(amrex::Real x, amrex::Real y, amrex::Real k, amrex::Real u0,
     const amrex::Real decay = std::exp(-amrex::Real(2.0) * nu * k * k * t);
     u = -u0 * std::cos(k * x) * std::sin(k * y) * decay;
     v =  u0 * std::sin(k * x) * std::cos(k * y) * decay;
+}
+
+// Background velocity (U, V) in lattice units from tgv.bg (fractions of u0).
+inline void backgroundVelocity(amrex::Real u0, amrex::Real& U, amrex::Real& V)
+{
+    amrex::Vector<amrex::Real> bg{amrex::Real(0.0), amrex::Real(0.0)};
+    amrex::ParmParse("tgv").queryarr("bg", bg);
+    U = bg[0] * u0;
+    V = bg[1] * u0;
 }
 
 inline amrex::Real exactRho(amrex::Real x, amrex::Real y, amrex::Real k, amrex::Real u0,
