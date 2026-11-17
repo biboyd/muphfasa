@@ -36,3 +36,37 @@ muphfasa_inputinfo example_inputs/inputs.2d lbm.tau=0.8 amr.restart=chk0002000
 ```
 
 Extra `key=value` arguments override the file, as for the solver. Run it from the directory the solver will run in so a relative `amr.restart` path resolves the same way.
+
+## powerspec
+
+Computes the shell-averaged kinetic energy spectrum E(k) of a muphfasa plotfile using `amrex::FFT` (based on the AMReX tutorial `FFT/EnergySpectrum`). It reads `vx`, `vy`, `vz` (m/s) from the plotfile, so E is per unit mass in SI units, and writes `shell, k [rad/m], E_shell, E(k)` to a text file. It also prints the kinetic energy in physical and spectral space as a Parseval check.
+
+The field is assumed periodic, so it is meant for periodic flows such as Taylor-Green or forced turbulence in a periodic box. Shells have width `2 pi / L_max`. Domains with unequal sides work, and the odd-sized grids FFTW supports work too. Shell 0 is the mean flow.
+
+Built for 3D by default. Like `input_info`, the dimension must match the plotfile; a mismatch is reported with the `DIM` to rebuild with.
+
+Needs FFTW (or the vendor FFT library on GPUs); set `FFTW_HOME` if it is not on the default search path.
+
+### Build
+
+GNUMake (MPI by default, `USE_MPI=FALSE` for serial):
+
+```sh
+cd util/powerspec
+make -j$(nproc)            # 3D: powerspec3d.gnu.MPI.ex
+make DIM=2 -j$(nproc)      # 2D plotfiles
+```
+
+CMake (enables AMReX's FFT module, so it needs FFTW at configure time):
+
+```sh
+cmake -S . -B build -Dmuphfasa_DIM=3 -Dmuphfasa_BUILD_POWERSPEC=ON
+cmake --build build --target muphfasa_powerspec -j$(nproc)
+```
+
+### Run
+
+```sh
+./powerspec3d.gnu.MPI.ex plt0005000 outfile=spectrum.txt
+mpirun -np 8 ./powerspec3d.gnu.MPI.ex plt0005000
+```

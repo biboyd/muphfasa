@@ -45,6 +45,10 @@ set(AMReX_MPI       ${muphfasa_ENABLE_MPI}  CACHE BOOL   "" FORCE)
 set(AMReX_OMP       ${muphfasa_ENABLE_OMP}  CACHE BOOL   "" FORCE)
 set(AMReX_EB        ${muphfasa_ENABLE_EB}   CACHE BOOL   "" FORCE)
 
+# util/powerspec needs AMReX's FFT module (and FFTW or a vendor FFT library).
+option(muphfasa_BUILD_POWERSPEC "Build the power-spectrum utility util/powerspec (enables AMReX_FFT)" OFF)
+set(AMReX_FFT       ${muphfasa_BUILD_POWERSPEC} CACHE BOOL "" FORCE)
+
 if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/external/amrex/CMakeLists.txt)
     message(FATAL_ERROR
         "external/amrex is empty. Run 'git submodule update --init --recursive'.")
@@ -83,7 +87,7 @@ endif()
 
 # ── Utilities ──────────────────────────────────────────────────────────────────
 option(muphfasa_BUILD_UTIL "Build standalone helper utils (util/)" OFF)
-if(muphfasa_BUILD_UTIL)
+if(muphfasa_BUILD_UTIL OR muphfasa_BUILD_POWERSPEC)
     add_subdirectory(util)
 endif()
 

@@ -16,3 +16,7 @@ target_link_libraries(muphfasa_inputinfo PRIVATE AMReX::amrex_${muphfasa_DIM}d)
 if(AMReX_CUDA)
     setup_target_for_cuda_compilation(muphfasa_inputinfo)
 endif()
+
+if(muphfasa_BUILD_POWERSPEC)
+    add_subdirectory(powerspec)
+endif()
